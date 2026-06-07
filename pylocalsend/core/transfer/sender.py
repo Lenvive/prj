@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import secrets
+import queue
+import threading
 import uuid
+import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -200,10 +204,13 @@ class SenderService:
             file_id: str,
             request: Request,
             relative: str | None = None,
+            pin: str | None = None,
+            token: str | None = None,
+            browser: bool = False,
             x_pin: str | None = Header(default=None, alias="X-PIN"),
             x_token: str | None = Header(default=None, alias="X-Token"),
         ) -> StreamingResponse:
-            pin, receiver_id = svc._auth(x_pin, x_token)
+            pin, receiver_id = svc._auth(x_pin or pin, x_token or token)
             record = svc.db.get_file(file_id)
             if not record:
                 raise HTTPException(404, "Not found")
@@ -224,8 +231,8 @@ class SenderService:
             file_size = file_path.stat().st_size
             start, end = parse_range_header(request.headers.get("range"), file_size)
             length = end - start + 1
-            cipher = svc._cipher(file_id, pin)
-            downloader = request.headers.get("X-Downloader", "anonymous")
+            cipher = None if browser else svc._cipher(file_id, pin)
+            downloader = request.headers.get("X-Downloader", "browser" if browser else "anonymous")
             log_id = svc.db.log_download_start(file_id, downloader, receiver_id)
             svc.active_downloads[file_id] = svc.active_downloads.get(file_id, 0) + 1
 
@@ -268,6 +275,55 @@ class SenderService:
             return StreamingResponse(
                 stream(),
                 media_type="application/octet-stream",
+                headers=headers,
+            )
+
+        @self.app.get("/api/download/{file_id}/zip")
+        async def download_directory_zip(
+            file_id: str,
+            request: Request,
+            pin: str | None = None,
+            token: str | None = None,
+            x_pin: str | None = Header(default=None, alias="X-PIN"),
+            x_token: str | None = Header(default=None, alias="X-Token"),
+        ) -> StreamingResponse:
+            _pin, receiver_id = svc._auth(x_pin or pin, x_token or token)
+            record = svc.db.get_file(file_id)
+            if not record:
+                raise HTTPException(404, "Not found")
+            if not record["is_dir"]:
+                raise HTTPException(400, "ZIP download is only available for directories")
+
+            root = Path(record["path"]).resolve()
+            if not root.is_dir():
+                raise HTTPException(404, "Directory not found on disk")
+
+            downloader = request.headers.get("X-Downloader", "browser")
+            log_id = svc.db.log_download_start(file_id, downloader, receiver_id)
+            svc.active_downloads[file_id] = svc.active_downloads.get(file_id, 0) + 1
+
+            def stream() -> Iterator[bytes]:
+                sent = 0
+                try:
+                    for chunk in _stream_directory_zip(root, str(record["name"]), svc.config.chunk_size):
+                        sent += len(chunk)
+                        yield chunk
+                    svc.db.log_download_finish(log_id, "completed", sent)
+                except Exception:
+                    svc.db.log_download_finish(log_id, "failed", sent)
+                    raise
+                finally:
+                    svc.active_downloads[file_id] = max(
+                        0, svc.active_downloads.get(file_id, 1) - 1
+                    )
+
+            headers = {
+                "Content-Disposition": f'attachment; filename="{record["name"]}.zip"',
+                "X-Encrypted": "0",
+            }
+            return StreamingResponse(
+                stream(),
+                media_type="application/zip",
                 headers=headers,
             )
 
@@ -392,3 +448,46 @@ def _receiver_to_api(record: dict[str, Any] | None, base_url: str) -> dict[str, 
         "status": record["status"],
         "created_at": record["created_at"],
     }
+
+
+def _stream_directory_zip(root: Path, root_name: str, chunk_size: int) -> Iterator[bytes]:
+    """Stream a folder as ZIP without first writing the archive to disk."""
+    chunks: queue.Queue[bytes | BaseException | None] = queue.Queue(maxsize=8)
+
+    class QueueWriter:
+        def write(self, data: bytes) -> int:
+            if data:
+                chunks.put(bytes(data))
+            return len(data)
+
+        def flush(self) -> None:
+            return None
+
+    def produce() -> None:
+        try:
+            with zipfile.ZipFile(
+                QueueWriter(),
+                mode="w",
+                compression=zipfile.ZIP_STORED,
+                allowZip64=True,
+            ) as archive:
+                for file_path, _size in iter_files_recursive(root):
+                    arcname = f"{root_name}/{relative_to_root(file_path, root)}"
+                    with archive.open(arcname, "w", force_zip64=True) as zip_entry:
+                        with file_path.open("rb") as source:
+                            while data := source.read(chunk_size):
+                                zip_entry.write(data)
+        except BaseException as ex:
+            chunks.put(ex)
+        finally:
+            chunks.put(None)
+
+    threading.Thread(target=produce, daemon=True).start()
+
+    while True:
+        item = chunks.get()
+        if item is None:
+            break
+        if isinstance(item, BaseException):
+            raise item
+        yield item

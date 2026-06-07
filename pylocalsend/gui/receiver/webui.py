@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import json
 from typing import Any
+from urllib.parse import urlencode
 
 from nicegui import ui
 
@@ -119,10 +120,7 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
         expanded: set[str] = set()
         current_files: list[dict[str, Any]] = []
 
-        dest_input = ui.input(
-            "下载目录（绝对路径）",
-            value=str(Path.home() / "Downloads"),
-        ).classes("w-full").props("outlined dense")
+        ui.label("文件会保存到当前浏览器的下载目录；如需每次选择位置，请开启浏览器的“下载前询问保存位置”。").classes("muted")
         with ui.element("div").classes("file-toolbar"):
             with ui.row().classes("w-full items-center justify-between gap-3"):
                 selected_label = ui.label("已选择 0 项").classes("muted")
@@ -194,30 +192,22 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
             if not ids:
                 ui.notify("请选择文件", type="warning")
                 return
-            dest = Path(dest_input.value.strip())
+            records = {str(f["id"]): f for f in current_files}
+            urls = [
+                _browser_download_url(records[fid], token=token, pin=pin)
+                for fid in ids
+                if fid in records
+            ]
+            if not urls:
+                ui.notify("没有可下载的文件", type="warning")
+                return
+
             progress_area.clear()
-            bars: dict[str, Any] = {}
             with progress_area:
-                ui.label("下载进度").classes("muted")
-
-            def on_progress(label: str, done: int, total: int) -> None:
-                if label not in bars:
-                    with progress_area:
-                        with ui.element("div").classes("progress-item"):
-                            with ui.element("div").classes("progress-meta"):
-                                ui.label(label).classes("progress-name")
-                                percent_label = ui.label("0%").classes("progress-percent")
-                            bar = ui.linear_progress(value=0, show_value=False).classes("w-full")
-                    bars[label] = {"bar": bar, "percent": percent_label}
-                ratio = min(1.0, max(0.0, done / total)) if total else 0
-                bars[label]["bar"].value = ratio
-                bars[label]["percent"].text = f"{ratio * 100:.1f}%"
-
-            try:
-                await client.download_items(ids, dest, progress_callback=on_progress)
-                ui.notify("下载完成", type="positive")
-            except Exception as ex:
-                ui.notify(str(ex), type="negative")
+                ui.label("已交给浏览器下载").classes("muted")
+                ui.label("下载进度由浏览器管理，不会写入发送端电脑。文件夹会下载为 ZIP。").classes("muted")
+            ui.run_javascript(_download_script(urls))
+            ui.notify("已开始浏览器下载", type="positive")
 
         async def start_download(_e: Any = None) -> None:
             await do_download()
@@ -438,3 +428,34 @@ def _show_details(item: dict[str, Any]) -> None:
                 ui.label(str(value)).classes("text-sm break-all")
         ui.button("关闭", on_click=dlg.close).props("flat")
     dlg.open()
+
+
+def _browser_download_url(item: dict[str, Any], *, token: str | None, pin: str | None) -> str:
+    query = {}
+    if token:
+        query["token"] = token
+    elif pin:
+        query["pin"] = pin
+
+    if item["is_dir"]:
+        return f"/api/download/{item['id']}/zip?{urlencode(query)}"
+
+    query["browser"] = "1"
+    return f"/api/download/{item['id']}?{urlencode(query)}"
+
+
+def _download_script(urls: list[str]) -> str:
+    return f"""
+(async () => {{
+    const urls = {json.dumps(urls)};
+    for (const url of urls) {{
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = '';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }}
+}})();
+"""
