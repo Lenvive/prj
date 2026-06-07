@@ -41,6 +41,12 @@ class SenderFacade:
             return []
         return list_dir_contents(Path(record["path"]))
 
+    def folder_path_contents(self, path: str) -> list[dict[str, Any]]:
+        from pathlib import Path
+        from pylocalsend.core.file_handler.file_handler import list_dir_contents
+
+        return list_dir_contents(Path(path))
+
     def file_downloads(self, file_id: str) -> list[dict[str, Any]]:
         return self.service.db.list_downloads_for_file(file_id)
 
