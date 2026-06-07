@@ -10,6 +10,7 @@ import uvicorn
 from pylocalsend.core.transfer.sender import SenderService
 from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.logger import get_logger
+from pylocalsend.core.utils.network import connect_host
 from pylocalsend.core.utils.port import find_free_port
 
 if TYPE_CHECKING:
@@ -95,6 +96,6 @@ def stop_server() -> None:
 def _port_in_use(host: str, port: int) -> bool:
     import socket
 
-    bind_host = "127.0.0.1" if host == "0.0.0.0" else host
+    bind_host = connect_host(host)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex((bind_host, port)) == 0

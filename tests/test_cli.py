@@ -41,6 +41,31 @@ def no_logging_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "setup_logging", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def stable_network_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pylocalsend.core.transfer import sender as sender_mod
+    from pylocalsend.core.utils import network as network_mod
+
+    def fake_get_access_urls(
+        port: int,
+        bind_host: str = "0.0.0.0",
+        *,
+        include_public: bool = True,
+    ) -> network_mod.AccessUrls:
+        localhost = f"http://127.0.0.1:{port}"
+        return network_mod.AccessUrls(
+            bind_host=bind_host,
+            port=port,
+            localhost=localhost,
+            lan=[],
+            public=None,
+        )
+
+    monkeypatch.setattr(network_mod, "get_access_urls", fake_get_access_urls)
+    monkeypatch.setattr(sender_mod, "get_access_urls", fake_get_access_urls)
+    monkeypatch.setattr(cli, "get_access_urls", fake_get_access_urls)
+
+
 def run_cli(args: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", ["pylocalsend", *args])
     cli.main()

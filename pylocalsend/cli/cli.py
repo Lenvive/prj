@@ -27,6 +27,7 @@ from pylocalsend.core.utils.config import (
 )
 from pylocalsend.core.utils.crypto import generate_pin
 from pylocalsend.core.utils.logger import setup_logging
+from pylocalsend.core.utils.network import connect_host, get_access_urls
 
 console = Console()
 
@@ -38,8 +39,16 @@ def _local_service() -> SenderService:
 
 def _server_reachable() -> bool:
     cfg = AppConfig.load()
-    host = "127.0.0.1" if cfg.host in ("0.0.0.0", "") else cfg.host
-    return _port_in_use(host, cfg.port)
+    return _port_in_use(connect_host(cfg.host), cfg.port)
+
+
+def _print_access_urls(port: int, bind_host: str) -> None:
+    urls = get_access_urls(port, bind_host)
+    console.print(f"base_url: [bold]{urls.primary}[/bold]")
+    for label, url in urls.labels():
+        console.print(f"  {label}: {url}")
+    if urls.public:
+        console.print("  [dim]公网地址需路由器端口映射后才可从外网访问[/dim]")
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -63,6 +72,11 @@ def cmd_sender(args: argparse.Namespace) -> None:
         console.print(f"[green]Generated server PIN:[/green] {cfg.server_pin}")
     svc = start_server(cfg, open_browser=args.open_browser)
     console.print(f"Sender running at [bold]{svc.base_url}[/bold]")
+    for label, url in svc.access_urls.labels():
+        if url != svc.base_url:
+            console.print(f"  {label}: {url}")
+    if svc.access_urls.public:
+        console.print("  [dim]公网地址需路由器端口映射后才可从外网访问[/dim]")
     console.print("Press Ctrl+C to stop.")
     try:
         while True:
@@ -181,7 +195,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
     svc = _local_service()
     online = _server_reachable()
     console.print(f"http_server: {'running' if online else 'stopped'}")
-    console.print(f"base_url: http://127.0.0.1:{cfg.port}")
+    _print_access_urls(cfg.port, cfg.host)
     console.print(f"files_count: {len(svc.db.list_files())}")
     console.print(f"receivers_count: {len(svc.db.list_receivers())}")
     if online:
@@ -190,7 +204,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
 
             pin = cfg.server_pin if cfg.pin_verification_enabled else ""
             r = httpx.get(
-                f"http://127.0.0.1:{cfg.port}/api/status",
+                f"http://{connect_host(cfg.host)}:{cfg.port}/api/status",
                 headers={"X-PIN": pin},
                 timeout=3,
             )
@@ -210,7 +224,7 @@ def cmd_close(_args: argparse.Namespace) -> None:
         cfg = AppConfig.load()
         try:
             httpx.post(
-                f"http://127.0.0.1:{cfg.port}/api/shutdown",
+                f"http://{connect_host(cfg.host)}:{cfg.port}/api/shutdown",
                 headers={"X-PIN": cfg.server_pin},
                 timeout=3,
             )

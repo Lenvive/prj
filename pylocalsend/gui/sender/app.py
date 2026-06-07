@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import webbrowser
 from typing import Any
 
@@ -13,6 +14,7 @@ from pylocalsend.core.file_handler.file_handler import format_size
 from pylocalsend.core.transfer.server_entry import prepare_service
 from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.crypto import generate_pin
+from pylocalsend.core.utils.network import connect_host
 from pylocalsend.gui.facade import SenderFacade
 
 # 原研哉风格：留白、低对比、克制用色
@@ -50,7 +52,7 @@ STYLE = """
     .tree-note { color: #aaa; font-size: 0.82rem; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
     .receiver-row {
         display: grid;
-        grid-template-columns: minmax(160px, 1fr) minmax(260px, 2fr) 90px 90px 150px;
+        grid-template-columns: minmax(160px, 1fr) minmax(260px, 2fr) 90px 90px 220px;
         gap: 12px;
         align-items: center;
         box-sizing: border-box;
@@ -78,7 +80,11 @@ def run_sender_gui() -> None:
         ui.add_head_html(STYLE)
         with ui.column().classes("w-full max-w-6xl mx-auto p-8 gap-6"):
             ui.label("PyLocalSend").classes("page-title")
-            ui.label(f"Sender · {facade.base_url}").classes("muted")
+            with ui.column().classes("gap-0"):
+                for label, url in facade.access_urls.labels():
+                    ui.label(f"{label} · {url}").classes("muted")
+                if facade.access_urls.public:
+                    ui.label("公网地址需路由器端口映射后才可从外网访问").classes("muted text-xs")
 
             with ui.tabs().classes("w-full") as tabs:
                 t_files = ui.tab("文件传输")
@@ -102,8 +108,7 @@ def run_sender_gui() -> None:
     ui.run_with(app, title="PyLocalSend")
 
     host = cfg.host if cfg.host != "0.0.0.0" else "0.0.0.0"
-    browser_host = "127.0.0.1" if cfg.host in ("0.0.0.0", "") else cfg.host
-    webbrowser.open(f"http://{browser_host}:{cfg.port}/")
+    webbrowser.open(f"http://{connect_host(cfg.host)}:{cfg.port}/")
     uvicorn.run(app, host=host, port=cfg.port, log_level="warning")
 
 
@@ -341,6 +346,10 @@ def _render_receiver_row(
                 on_click=lambda _e, rid=receiver["id"]: _show_receiver_downloads(facade, rid),
             ).props("flat dense")
             ui.button(
+                "复制链接",
+                on_click=lambda _e, node=dict(receiver): _show_receiver_links(facade, node),
+            ).props("flat dense")
+            ui.button(
                 "删除",
                 on_click=lambda _e, rid=receiver["id"]: _remove_receiver(facade, rid, refresh),
             ).props("flat dense color=negative")
@@ -363,6 +372,32 @@ async def _show_receiver_downloads(facade: SenderFacade, receiver_id: str) -> No
             ).classes("text-sm")
         ui.button("关闭", on_click=dlg.close)
     dlg.open()
+
+
+def _show_receiver_links(facade: SenderFacade, receiver: dict[str, Any]) -> None:
+    token = str(receiver["token"])
+    links = [
+        (label, f"{url.rstrip('/')}/r/{token}")
+        for label, url in facade.access_urls.labels()
+    ]
+
+    with ui.dialog() as dlg, ui.card().classes("p-6 min-w-96 max-w-3xl"):
+        ui.label(f"复制链接 · {receiver['name']}").classes("page-title mb-4")
+        for label, link in links:
+            with ui.row().classes("w-full items-center gap-3 no-wrap"):
+                ui.label(label).classes("muted").style("width: 72px; min-width: 72px;")
+                ui.label(link).classes("text-sm break-all grow")
+                ui.button(
+                    "复制",
+                    on_click=lambda _e, text=link: _copy_to_clipboard(text),
+                ).props("flat dense")
+        ui.button("关闭", on_click=dlg.close).props("flat")
+    dlg.open()
+
+
+def _copy_to_clipboard(text: str) -> None:
+    ui.run_javascript(f"navigator.clipboard.writeText({json.dumps(text)})")
+    ui.notify("已复制到粘贴板", type="positive")
 
 
 def _settings_tab(facade: SenderFacade) -> None:

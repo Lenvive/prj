@@ -24,6 +24,7 @@ from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.crypto import StreamCipher, derive_key
 from pylocalsend.core.utils.db import Database
 from pylocalsend.core.utils.logger import get_logger
+from pylocalsend.core.utils.network import AccessUrls, get_access_urls
 
 log = get_logger(__name__)
 
@@ -49,9 +50,12 @@ class SenderService:
         self._mount_routes()
 
     @property
+    def access_urls(self) -> AccessUrls:
+        return get_access_urls(self.config.port, self.config.host)
+
+    @property
     def base_url(self) -> str:
-        host = "127.0.0.1" if self.config.host in ("0.0.0.0", "") else self.config.host
-        return f"http://{host}:{self.config.port}"
+        return self.access_urls.primary
 
     def _cipher(self, file_id: str, pin: str) -> StreamCipher | None:
         if not self.config.encryption_enabled:
@@ -104,6 +108,7 @@ class SenderService:
         async def status(auth: tuple[str, str | None] = Depends(require_auth)) -> dict:
             svc.connections.add(auth[0][:8])
             files = svc.db.list_files()
+            urls = svc.access_urls
             return {
                 "connections": len(svc.connections),
                 "files_count": len(files),
@@ -112,6 +117,8 @@ class SenderService:
                 "pin_verification_enabled": svc.config.pin_verification_enabled,
                 "host": svc.config.host,
                 "port": svc.config.port,
+                "base_url": urls.primary,
+                "access_urls": {label: url for label, url in urls.labels()},
             }
 
         @self.app.get("/api/files")
@@ -347,12 +354,14 @@ class SenderService:
         return _receiver_to_api(self.db.get_receiver(receiver_id), self.base_url)
 
     def get_status_local(self) -> dict[str, Any]:
+        urls = self.access_urls
         return {
             "running": True,
             "connections": len(self.connections),
             "files_count": len(self.db.list_files()),
             "active_downloads": len(self.active_downloads),
-            "base_url": self.base_url,
+            "base_url": urls.primary,
+            "access_urls": {label: url for label, url in urls.labels()},
         }
 
 

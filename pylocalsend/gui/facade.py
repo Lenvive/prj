@@ -78,3 +78,7 @@ class SenderFacade:
     @property
     def base_url(self) -> str:
         return self.service.base_url
+
+    @property
+    def access_urls(self):
+        return self.service.access_urls
