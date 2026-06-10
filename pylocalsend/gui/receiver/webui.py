@@ -19,30 +19,31 @@ STYLE = """
     .page-title { font-weight: 300; letter-spacing: 0.08em; font-size: 1.4rem; color: #222; }
     .muted { color: #888; font-size: 0.85rem; }
     .file-tree {
-        width: 1180px;
-        max-width: 100%;
+        width: min(1360px, 100%);
+        margin-inline: auto;
         overflow-x: auto;
         border: 1px solid #e8e8e8;
         border-radius: 2px;
         background: #fff;
     }
     .file-toolbar {
-        width: 1180px;
-        max-width: 100%;
-        padding: 12px;
+        width: min(1360px, 100%);
+        margin-inline: auto;
+        padding: 12px 16px;
         border: 1px solid #e8e8e8;
         border-radius: 2px;
         background: #fff;
     }
     .file-row {
         display: grid;
-        grid-template-columns: 260px 90px 110px 320px 160px 186px;
-        gap: 12px;
+        grid-template-columns: 260px 90px 110px minmax(300px, 1fr) 160px minmax(300px, auto);
+        gap: 16px;
         align-items: center;
         box-sizing: border-box;
-        width: 1180px;
+        width: 100%;
+        min-width: 1040px;
         min-height: 44px;
-        padding: 8px 12px;
+        padding: 8px 16px;
         border-bottom: 1px solid #f0f0f0;
     }
     .file-row:last-child { border-bottom: none; }
@@ -53,11 +54,11 @@ STYLE = """
     .expand-spacer { width: 28px; min-width: 28px; }
     .tree-note { color: #aaa; font-size: 0.82rem; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
     .progress-panel {
-        width: 1180px;
-        max-width: 100%;
+        width: min(1360px, 100%);
+        margin-inline: auto;
         max-height: 260px;
         overflow-y: auto;
-        padding: 12px;
+        padding: 12px 16px;
         border: 1px solid #e8e8e8;
         border-radius: 2px;
         background: #fff;
@@ -95,7 +96,7 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
     ui.add_head_html(STYLE)
     cfg = AppConfig.load()
 
-    with ui.column().classes("w-full max-w-6xl mx-auto p-8 gap-6"):
+    with ui.column().classes("w-full max-w-[1420px] mx-auto p-8 gap-6"):
         if token:
             svc = get_service()
             receiver = svc.db.get_receiver_by_token(token)
@@ -106,14 +107,18 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
             host = svc.base_url
             client = ReceiverClient(host, pin, token=token, max_parallel=cfg.max_parallel)
             ui.label(f"接收端 · {receiver['name']}").classes("page-title")
+            receiver_disabled = receiver["status"] == "disabled"
         else:
             if not host or not pin:
                 ui.label("需要 host 与 PIN").classes("text-negative")
                 return
             client = ReceiverClient(host, pin, max_parallel=cfg.max_parallel)
             ui.label("接收端").classes("page-title")
+            receiver_disabled = False
 
         ui.label(f"Sender · {host}").classes("muted")
+        if receiver_disabled:
+            ui.label("该接收端已被发送端禁用，无法下载文件。").classes("text-negative")
 
         file_list = ui.column().classes("w-full gap-3")
         selected: dict[str, bool] = {}
@@ -128,11 +133,13 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
                     ui.button("全选", on_click=lambda _e: select_all()).props("flat dense")
                     ui.button("清空选择", on_click=lambda _e: clear_selection()).props("flat dense")
                     download_btn = ui.button("下载已选").props("unelevated color=primary dense")
+                    if receiver_disabled:
+                        download_btn.disable()
 
         def update_selection_summary() -> None:
             count = sum(1 for value in selected.values() if value)
             selected_label.text = f"已选择 {count} 项"
-            if count:
+            if count and not receiver_disabled:
                 download_btn.enable()
             else:
                 download_btn.disable()
@@ -175,7 +182,7 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
                     ui.label("暂无可下载文件。").classes("muted")
                     return
 
-                with ui.element("div").classes("file-tree w-full"):
+                with ui.element("div").classes("file-tree"):
                     _render_file_header()
                     for f in files:
                         await _render_remote_node(
@@ -188,6 +195,9 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
                         )
 
         async def do_download() -> None:
+            if receiver_disabled:
+                ui.notify("该接收端已被禁用", type="negative")
+                return
             ids = [fid for fid, on in selected.items() if on]
             if not ids:
                 ui.notify("请选择文件", type="warning")

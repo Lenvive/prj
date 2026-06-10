@@ -123,6 +123,28 @@ class Database:
                 (receiver_id, name, pin, token, _utcnow()),
             )
 
+    def disable_receiver(self, receiver_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE receivers SET status = 'disabled'
+                WHERE id = ? AND status = 'active'
+                """,
+                (receiver_id,),
+            )
+            return cur.rowcount > 0
+
+    def enable_receiver(self, receiver_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE receivers SET status = 'active'
+                WHERE id = ? AND status = 'disabled'
+                """,
+                (receiver_id,),
+            )
+            return cur.rowcount > 0
+
     def remove_receiver(self, receiver_id: str) -> bool:
         with self._conn() as conn:
             cur = conn.execute(
@@ -150,7 +172,10 @@ class Database:
     def get_receiver_by_token(self, token: str) -> dict[str, Any] | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM receivers WHERE token = ? AND status = 'active'",
+                """
+                SELECT * FROM receivers
+                WHERE token = ? AND status IN ('active', 'disabled')
+                """,
                 (token,),
             ).fetchone()
         return dict(row) if row else None

@@ -63,6 +63,12 @@ class SenderFacade:
     def remove_receiver(self, receiver_id: str) -> None:
         self.service.db.remove_receiver(receiver_id)
 
+    def disable_receiver(self, receiver_id: str) -> None:
+        self.service.disable_receiver(receiver_id)
+
+    def enable_receiver(self, receiver_id: str) -> None:
+        self.service.enable_receiver(receiver_id)
+
     def receiver_downloads(self, receiver_id: str) -> list[dict[str, Any]]:
         return self.service.db.list_downloads_for_receiver(receiver_id)
 

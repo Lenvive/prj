@@ -25,8 +25,8 @@ STYLE = """
     .page-title { font-weight: 300; letter-spacing: 0.08em; font-size: 1.4rem; color: #222; }
     .muted { color: #888; font-size: 0.85rem; }
     .file-tree {
-        width: 1180px;
-        max-width: 100%;
+        width: min(1360px, 100%);
+        margin-inline: auto;
         overflow-x: auto;
         border: 1px solid #e8e8e8;
         border-radius: 2px;
@@ -34,13 +34,14 @@ STYLE = """
     }
     .file-row {
         display: grid;
-        grid-template-columns: 250px 80px 100px 300px 160px 206px;
-        gap: 12px;
+        grid-template-columns: 260px 90px 110px minmax(300px, 1fr) 160px minmax(300px, auto);
+        gap: 16px;
         align-items: center;
         box-sizing: border-box;
-        width: 1180px;
+        width: 100%;
+        min-width: 1040px;
         min-height: 44px;
-        padding: 8px 12px;
+        padding: 8px 16px;
         border-bottom: 1px solid #f0f0f0;
     }
     .file-row:last-child { border-bottom: none; }
@@ -52,13 +53,14 @@ STYLE = """
     .tree-note { color: #aaa; font-size: 0.82rem; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
     .receiver-row {
         display: grid;
-        grid-template-columns: minmax(160px, 1fr) minmax(260px, 2fr) 90px 90px 220px;
-        gap: 12px;
+        grid-template-columns: 160px minmax(360px, 1fr) 100px 100px minmax(320px, auto);
+        gap: 16px;
         align-items: center;
         box-sizing: border-box;
-        width: 1180px;
+        width: 100%;
+        min-width: 1040px;
         min-height: 44px;
-        padding: 8px 12px;
+        padding: 8px 16px;
         border-bottom: 1px solid #f0f0f0;
     }
     .receiver-row:last-child { border-bottom: none; }
@@ -78,7 +80,7 @@ def run_sender_gui() -> None:
     @ui.page("/")
     def sender_home() -> None:
         ui.add_head_html(STYLE)
-        with ui.column().classes("w-full max-w-6xl mx-auto p-8 gap-6"):
+        with ui.column().classes("w-full max-w-[1420px] mx-auto p-8 gap-6"):
             ui.label("PyLocalSend").classes("page-title")
             with ui.column().classes("gap-0"):
                 for label, url in facade.access_urls.labels():
@@ -125,7 +127,7 @@ def _files_tab(facade: SenderFacade) -> None:
                 ui.label("暂无已注册文件。").classes("muted")
                 return
 
-            with ui.element("div").classes("file-tree w-full"):
+            with ui.element("div").classes("file-tree"):
                 _render_file_header()
                 for f in files:
                     _render_file_node(
@@ -300,7 +302,7 @@ def _receivers_tab(facade: SenderFacade) -> None:
                 ui.label("暂无接收端。").classes("muted")
                 return
 
-            with ui.element("div").classes("file-tree w-full"):
+            with ui.element("div").classes("file-tree"):
                 _render_receiver_header()
                 for r in receivers:
                     _render_receiver_row(facade, r, refresh)
@@ -330,6 +332,10 @@ def _render_receiver_header() -> None:
         ui.label("操作").classes("file-cell")
 
 
+def _receiver_status_label(status: str) -> str:
+    return {"active": "正常", "disabled": "已禁用"}.get(status, status)
+
+
 def _render_receiver_row(
     facade: SenderFacade,
     receiver: dict[str, Any],
@@ -338,7 +344,7 @@ def _render_receiver_row(
     with ui.element("div").classes("receiver-row"):
         ui.label(str(receiver["name"])).classes("file-cell")
         ui.label(str(receiver["link"])).classes("file-cell muted")
-        ui.label(str(receiver["status"])).classes("file-cell muted")
+        ui.label(_receiver_status_label(str(receiver["status"]))).classes("file-cell muted")
         ui.label(str(receiver["pin"])).classes("file-cell muted")
         with ui.row().classes("gap-1"):
             ui.button(
@@ -349,10 +355,32 @@ def _render_receiver_row(
                 "复制链接",
                 on_click=lambda _e, node=dict(receiver): _show_receiver_links(facade, node),
             ).props("flat dense")
+            if receiver["status"] == "active":
+                ui.button(
+                    "禁用",
+                    on_click=lambda _e, rid=receiver["id"]: _disable_receiver(facade, rid, refresh),
+                ).props("flat dense color=warning")
+            elif receiver["status"] == "disabled":
+                ui.button(
+                    "启用",
+                    on_click=lambda _e, rid=receiver["id"]: _enable_receiver(facade, rid, refresh),
+                ).props("flat dense color=positive")
             ui.button(
                 "删除",
                 on_click=lambda _e, rid=receiver["id"]: _remove_receiver(facade, rid, refresh),
             ).props("flat dense color=negative")
+
+
+def _disable_receiver(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:
+    facade.disable_receiver(receiver_id)
+    ui.notify("已禁用该接收端，进行中的下载已停止", type="info")
+    refresh()
+
+
+def _enable_receiver(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:
+    facade.enable_receiver(receiver_id)
+    ui.notify("已解除禁用，该接收端可继续下载", type="positive")
+    refresh()
 
 
 def _remove_receiver(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:

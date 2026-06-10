@@ -50,6 +50,8 @@ class SenderService:
         self.db = db or Database()
         self.active_downloads: dict[str, int] = {}
         self.connections: set[str] = set()
+        self._download_cancel: dict[int, threading.Event] = {}
+        self._download_receiver: dict[int, str | None] = {}
         self.app = FastAPI(title="PyLocalSend Sender")
         self._mount_routes()
 
@@ -85,6 +87,40 @@ class SenderService:
                 raise HTTPException(403, "Invalid PIN")
             return expected, None
         return pin or "", None
+
+    def _auth_download(
+        self,
+        pin: str | None,
+        token: str | None,
+    ) -> tuple[str, str | None]:
+        """Authenticate for download; reject disabled receivers."""
+        effective_pin, receiver_id = self._auth(pin, token)
+        if receiver_id:
+            receiver = self.db.get_receiver(receiver_id)
+            if not receiver or receiver["status"] != "active":
+                raise HTTPException(403, "Receiver is disabled")
+        return effective_pin, receiver_id
+
+    def _register_download(self, log_id: int, receiver_id: str | None) -> threading.Event:
+        cancel = threading.Event()
+        self._download_cancel[log_id] = cancel
+        self._download_receiver[log_id] = receiver_id
+        return cancel
+
+    def _unregister_download(self, log_id: int) -> None:
+        self._download_cancel.pop(log_id, None)
+        self._download_receiver.pop(log_id, None)
+
+    def disable_receiver(self, receiver_id: str) -> bool:
+        if not self.db.disable_receiver(receiver_id):
+            return False
+        for log_id, rid in list(self._download_receiver.items()):
+            if rid == receiver_id:
+                self._download_cancel[log_id].set()
+        return True
+
+    def enable_receiver(self, receiver_id: str) -> bool:
+        return self.db.enable_receiver(receiver_id)
 
     def _mount_routes(self) -> None:
         svc = self
@@ -210,7 +246,7 @@ class SenderService:
             x_pin: str | None = Header(default=None, alias="X-PIN"),
             x_token: str | None = Header(default=None, alias="X-Token"),
         ) -> StreamingResponse:
-            pin, receiver_id = svc._auth(x_pin or pin, x_token or token)
+            pin, receiver_id = svc._auth_download(x_pin or pin, x_token or token)
             record = svc.db.get_file(file_id)
             if not record:
                 raise HTTPException(404, "Not found")
@@ -234,6 +270,7 @@ class SenderService:
             cipher = None if browser else svc._cipher(file_id, pin)
             downloader = request.headers.get("X-Downloader", "browser" if browser else "anonymous")
             log_id = svc.db.log_download_start(file_id, downloader, receiver_id)
+            cancel = svc._register_download(log_id, receiver_id)
             svc.active_downloads[file_id] = svc.active_downloads.get(file_id, 0) + 1
 
             async def stream():
@@ -246,13 +283,22 @@ class SenderService:
                         length=length,
                         cipher=cipher,
                     ):
+                        if cancel.is_set():
+                            svc.db.log_download_finish(log_id, "cancelled", sent)
+                            return
                         sent += len(chunk)
                         yield chunk
+                    if cancel.is_set():
+                        svc.db.log_download_finish(log_id, "cancelled", sent)
+                        return
                     svc.db.log_download_finish(log_id, "completed", sent)
                 except Exception:
-                    svc.db.log_download_finish(log_id, "failed", sent)
-                    raise
+                    status = "cancelled" if cancel.is_set() else "failed"
+                    svc.db.log_download_finish(log_id, status, sent)
+                    if not cancel.is_set():
+                        raise
                 finally:
+                    svc._unregister_download(log_id)
                     svc.active_downloads[file_id] = max(
                         0, svc.active_downloads.get(file_id, 1) - 1
                     )
@@ -287,7 +333,7 @@ class SenderService:
             x_pin: str | None = Header(default=None, alias="X-PIN"),
             x_token: str | None = Header(default=None, alias="X-Token"),
         ) -> StreamingResponse:
-            _pin, receiver_id = svc._auth(x_pin or pin, x_token or token)
+            _pin, receiver_id = svc._auth_download(x_pin or pin, x_token or token)
             record = svc.db.get_file(file_id)
             if not record:
                 raise HTTPException(404, "Not found")
@@ -300,19 +346,29 @@ class SenderService:
 
             downloader = request.headers.get("X-Downloader", "browser")
             log_id = svc.db.log_download_start(file_id, downloader, receiver_id)
+            cancel = svc._register_download(log_id, receiver_id)
             svc.active_downloads[file_id] = svc.active_downloads.get(file_id, 0) + 1
 
             def stream() -> Iterator[bytes]:
                 sent = 0
                 try:
                     for chunk in _stream_directory_zip(root, str(record["name"]), svc.config.chunk_size):
+                        if cancel.is_set():
+                            svc.db.log_download_finish(log_id, "cancelled", sent)
+                            return
                         sent += len(chunk)
                         yield chunk
+                    if cancel.is_set():
+                        svc.db.log_download_finish(log_id, "cancelled", sent)
+                        return
                     svc.db.log_download_finish(log_id, "completed", sent)
                 except Exception:
-                    svc.db.log_download_finish(log_id, "failed", sent)
-                    raise
+                    status = "cancelled" if cancel.is_set() else "failed"
+                    svc.db.log_download_finish(log_id, status, sent)
+                    if not cancel.is_set():
+                        raise
                 finally:
+                    svc._unregister_download(log_id)
                     svc.active_downloads[file_id] = max(
                         0, svc.active_downloads.get(file_id, 1) - 1
                     )
@@ -354,6 +410,24 @@ class SenderService:
         ) -> dict:
             if not svc.db.remove_receiver(receiver_id):
                 raise HTTPException(404, "Receiver not found")
+            return {"ok": True}
+
+        @self.app.post("/api/receivers/{receiver_id}/disable")
+        async def disable_receiver(
+            receiver_id: str,
+            auth: tuple[str, str | None] = Depends(require_auth),
+        ) -> dict:
+            if not svc.disable_receiver(receiver_id):
+                raise HTTPException(404, "Receiver not found or already disabled")
+            return {"ok": True}
+
+        @self.app.post("/api/receivers/{receiver_id}/enable")
+        async def enable_receiver(
+            receiver_id: str,
+            auth: tuple[str, str | None] = Depends(require_auth),
+        ) -> dict:
+            if not svc.enable_receiver(receiver_id):
+                raise HTTPException(404, "Receiver not found or not disabled")
             return {"ok": True}
 
         @self.app.get("/api/receivers/{receiver_id}/downloads")

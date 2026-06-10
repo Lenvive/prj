@@ -74,3 +74,74 @@ def test_directory_browser_download_streams_zip(tmp_path: Path) -> None:
         assert sorted(archive.namelist()) == ["shared/a.txt", "shared/nested/b.txt"]
         assert archive.read("shared/a.txt") == b"a"
         assert archive.read("shared/nested/b.txt") == b"b"
+
+
+def test_disable_receiver_blocks_new_download(tmp_path: Path) -> None:
+    shared = tmp_path / "hello.txt"
+    shared.write_bytes(b"hello receiver")
+    svc = _service(tmp_path)
+    record = svc.register_path(str(shared))
+    receiver = svc.create_receiver("laptop", "654321")
+    client = TestClient(svc.app)
+
+    assert svc.disable_receiver(receiver["id"]) is True
+
+    response = client.get(
+        f"/api/download/{record['id']}",
+        params={"token": receiver["token"], "browser": "1"},
+    )
+    assert response.status_code == 403
+
+
+def test_disable_receiver_cancels_active_download(tmp_path: Path) -> None:
+    shared = tmp_path / "large.bin"
+    shared.write_bytes(b"x" * 64)
+    cfg = AppConfig(
+        encryption_enabled=True,
+        pin_verification_enabled=True,
+        server_pin="123456",
+        chunk_size=4,
+    )
+    svc = SenderService(cfg, Database(tmp_path / "pylocalsend.db"))
+    record = svc.register_path(str(shared))
+    receiver = svc.create_receiver("laptop", "654321")
+    client = TestClient(svc.app)
+
+    with client.stream(
+        "GET",
+        f"/api/download/{record['id']}",
+        params={"token": receiver["token"], "browser": "1"},
+    ) as response:
+        assert response.status_code == 200
+        first = next(response.iter_bytes(chunk_size=4))
+        assert first == b"xxxx"
+        assert svc.disable_receiver(receiver["id"]) is True
+        rest = b"".join(response.iter_bytes())
+        assert len(first) + len(rest) < 64
+
+    logs = svc.db.list_downloads_for_receiver(receiver["id"])
+    assert logs[0]["status"] == "cancelled"
+
+
+def test_enable_receiver_restores_download(tmp_path: Path) -> None:
+    shared = tmp_path / "hello.txt"
+    shared.write_bytes(b"hello receiver")
+    svc = _service(tmp_path)
+    record = svc.register_path(str(shared))
+    receiver = svc.create_receiver("laptop", "654321")
+    client = TestClient(svc.app)
+
+    assert svc.disable_receiver(receiver["id"]) is True
+    blocked = client.get(
+        f"/api/download/{record['id']}",
+        params={"token": receiver["token"], "browser": "1"},
+    )
+    assert blocked.status_code == 403
+
+    assert svc.enable_receiver(receiver["id"]) is True
+    response = client.get(
+        f"/api/download/{record['id']}",
+        params={"token": receiver["token"], "browser": "1"},
+    )
+    assert response.status_code == 200
+    assert response.content == b"hello receiver"
