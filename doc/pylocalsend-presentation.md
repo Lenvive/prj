@@ -473,8 +473,8 @@ section.end .sub {
     <p class="sub">发送端只登记本地文件或文件夹路径，界面负责展示和管理。</p>
   </div>
   <div class="line-list">
-    <div class="line-item"><b>文件</b><span>注册、查看、删除共享路径。</span></div>
-    <div class="line-item"><b>接收端</b><span>创建 token 链接，复制给指定接收端。</span></div>
+    <div class="line-item"><b>文件</b><span>注册、查看、删除共享路径；勾选控制开放范围。</span></div>
+    <div class="line-item"><b>接收端</b><span>创建 token 链接；禁用/启用；复制给指定接收端。</span></div>
     <div class="line-item"><b>记录</b><span>查看下载者、时间、状态和传输量。</span></div>
     <div class="line-item"><b>设置</b><span>端口、分片大小、并行数、PIN、加密。</span></div>
   </div>
@@ -522,12 +522,35 @@ pylocalsend download file.zip `
   <div class="panel">
     <span class="number">B</span>
     <h3>文件夹</h3>
-    <p>发送端按需生成 ZIP 流，浏览器保存为 `<文件夹名>.zip`。</p>
+    <p>发送端按开放范围生成 ZIP 流，浏览器保存为 `<文件夹名>.zip`。</p>
   </div>
 </div>
 
 <div class="quote" style="margin-top:72px;">
-  <p>WebUI 不再让服务端 Python 写“下载目录”，避免文件落到发送端电脑。</p>
+  <p>仅显示发送端已勾选的项；catalog 版本轮询自动同步，无需手动刷新。</p>
+</div>
+
+---
+
+## 下载开放与接收端控制
+
+<div class="columns">
+  <div class="panel">
+    <span class="number">01</span>
+    <h3>开放勾选</h3>
+    <p>发送端首列复选框决定对接收端可见的路径；子文件夹/子文件支持级联选择，状态写入 `download_grants`。</p>
+  </div>
+  <div class="panel">
+    <span class="number">02</span>
+    <h3>禁用接收端</h3>
+    <p>禁用后禁止新下载并中断进行中的传输；解除禁用后 token 链接恢复正常。</p>
+  </div>
+</div>
+
+<div class="columns three" style="margin-top:36px;">
+  <div class="panel"><h3>全部开放</h3><p>一键开放所有已注册项。</p></div>
+  <div class="panel"><h3>全部关闭</h3><p>一键隐藏所有共享项。</p></div>
+  <div class="panel"><h3>自动同步</h3><p>接收端每 2 秒检测 catalog-version 变化。</p></div>
 </div>
 
 ---
@@ -577,7 +600,7 @@ pylocalsend download file.zip `
   <div class="step"><b>01</b><span>启动发送端服务</span></div>
   <div class="step"><b>02</b><span>登记文件或文件夹路径</span></div>
   <div class="step"><b>03</b><span>保存元数据到 SQLite</span></div>
-  <div class="step"><b>04</b><span>接收端获取文件列表</span></div>
+  <div class="step"><b>04</b><span>接收端获取已开放文件列表</span></div>
   <div class="step"><b>05</b><span>发起下载请求</span></div>
   <div class="step"><b>06</b><span>发送端分片读取并返回</span></div>
 </div>
@@ -633,12 +656,25 @@ pylocalsend download file.zip `
   <div class="panel">
     <span class="number">TOKEN</span>
     <h3>接收端链接</h3>
-    <p>为每个接收端生成独立链接，便于管理和撤销。</p>
+    <p>为每个接收端生成独立链接；可禁用/启用，便于临时管控。</p>
   </div>
+  <div class="panel">
+    <span class="number">GRANT</span>
+    <h3>开放范围</h3>
+    <p>按路径粒度控制可见性；列表、树、下载和 ZIP 均受 grants 过滤。</p>
+  </div>
+</div>
+
+<div class="columns" style="margin-top:36px;">
   <div class="panel">
     <span class="number">LOG</span>
     <h3>下载记录</h3>
     <p>保存下载者、开始时间、状态和传输字节数。</p>
+  </div>
+  <div class="panel">
+    <span class="number">VER</span>
+    <h3>Catalog 版本</h3>
+    <p>共享文件与 grants 内容哈希；接收端 WebUI 轮询检测变更。</p>
   </div>
 </div>
 
@@ -678,7 +714,7 @@ pylocalsend download file.zip `
 <pre><code>pylocalsend/
   cli/                 # 命令行入口
   core/
-    file_handler/      # 元数据、目录遍历、分片读写
+    file_handler/      # 元数据、目录遍历、分片读写、download_grants
     receiver/          # 接收端下载客户端
     transfer/          # 发送端服务和 API
     utils/             # 配置、数据库、加密、网络
@@ -703,7 +739,8 @@ doc/</code></pre>
   </div>
   <div class="line-list">
     <div class="line-item"><b>files</b><span>路径、名称、大小、类型、状态。</span></div>
-    <div class="line-item"><b>receivers</b><span>名称、PIN、token、状态。</span></div>
+    <div class="line-item"><b>download_grants</b><span>每个共享项的开放相对路径。</span></div>
+    <div class="line-item"><b>receivers</b><span>名称、PIN、token、状态（正常/已禁用）。</span></div>
     <div class="line-item"><b>logs</b><span>下载者、时间、状态、字节数。</span></div>
   </div>
 </div>
@@ -719,7 +756,7 @@ doc/</code></pre>
   </div>
   <div class="panel">
     <h3>服务端下载</h3>
-    <p>文件注册、鉴权、浏览器下载、ZIP 流和日志。</p>
+    <p>文件注册、鉴权、grants 过滤、禁用中断、浏览器下载、ZIP 流和日志。</p>
   </div>
 </div>
 
@@ -745,10 +782,11 @@ pytest tests -v</code></pre>
 <div class="flow">
   <div class="step"><b>01</b><span>启动 `pylocalsend gui`</span></div>
   <div class="step"><b>02</b><span>注册一个文件和一个文件夹</span></div>
-  <div class="step"><b>03</b><span>创建接收端 token 链接</span></div>
-  <div class="step"><b>04</b><span>浏览器打开链接</span></div>
-  <div class="step"><b>05</b><span>下载单文件和文件夹 ZIP</span></div>
-  <div class="step"><b>06</b><span>回到发送端查看下载记录</span></div>
+  <div class="step"><b>03</b><span>勾选部分子项开放下载</span></div>
+  <div class="step"><b>04</b><span>创建接收端 token 链接</span></div>
+  <div class="step"><b>05</b><span>浏览器打开链接，确认仅见开放项</span></div>
+  <div class="step"><b>06</b><span>发送端调整勾选，接收端自动同步</span></div>
+  <div class="step"><b>07</b><span>禁用接收端，验证下载被中断</span></div>
 </div>
 
 ---
@@ -785,6 +823,7 @@ pytest tests -v</code></pre>
   <span class="label">局域网</span>
   <span class="label">流式传输</span>
   <span class="label">可管理</span>
+  <span class="label">细粒度开放</span>
 </div>
 
 ---
