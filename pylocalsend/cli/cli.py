@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.progress import BarColumn, DownloadColumn, Progress, TaskID, TextColumn, TransferSpeedColumn
 from rich.table import Table
 
+from pylocalsend.core.file_handler.download_grants import normalize_relative_path
 from pylocalsend.core.receiver.receiver import ReceiverClient
 from pylocalsend.core.transfer.sender import SenderService
 from pylocalsend.core.transfer.server_entry import (
@@ -31,6 +32,8 @@ from pylocalsend.core.utils.network import connect_host, get_access_urls
 
 console = Console()
 
+_RECEIVER_STATUS_LABELS = {"active": "正常", "disabled": "已禁用"}
+
 
 def _local_service() -> SenderService:
     """Local metadata operations — no HTTP server required."""
@@ -49,6 +52,97 @@ def _print_access_urls(port: int, bind_host: str) -> None:
         console.print(f"  {label}: {url}")
     if urls.public:
         console.print("  [dim]公网地址需路由器端口映射后才可从外网访问[/dim]")
+
+
+def _auth_headers() -> dict[str, str]:
+    cfg = AppConfig.load()
+    pin = cfg.server_pin if cfg.pin_verification_enabled else ""
+    return {"X-PIN": pin}
+
+
+def _receiver_status_label(status: str) -> str:
+    return _RECEIVER_STATUS_LABELS.get(status, status)
+
+
+def _grant_summary(grants: set[str], is_dir: bool) -> str:
+    if not grants:
+        return "closed"
+    if "" in grants:
+        return "open"
+    if is_dir:
+        return f"partial ({len(grants)})"
+    return "open"
+
+
+def _resolve_shared_file(svc: SenderService, spec: str) -> dict:
+    path = str(Path(spec).resolve())
+    record = svc.db.get_file_by_path(path)
+    if record:
+        return record
+    matches = [f for f in svc.db.list_files() if f["name"] == spec or f["id"] == spec]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        console.print(f"[red]Multiple shared items match:[/red] {spec}")
+        sys.exit(1)
+    console.print(f"[red]Shared item not found:[/red] {spec}")
+    sys.exit(1)
+
+
+def _pick_receiver_id(svc: SenderService, receiver_id: str | None) -> str | None:
+    receivers = svc.db.list_receivers()
+    if not receivers:
+        console.print("No receivers.")
+        return None
+    if receiver_id:
+        return receiver_id
+    for i, receiver in enumerate(receivers):
+        status = _receiver_status_label(str(receiver["status"]))
+        console.print(f"{i + 1}. {receiver['name']} ({status}) ({receiver['id'][:8]}...)")
+    choice = int(console.input("Select number: ")) - 1
+    return receivers[choice]["id"]
+
+
+def _disable_receiver_remote(receiver_id: str) -> bool:
+    import httpx
+
+    cfg = AppConfig.load()
+    response = httpx.post(
+        f"http://{connect_host(cfg.host)}:{cfg.port}/api/receivers/{receiver_id}/disable",
+        headers=_auth_headers(),
+        timeout=3,
+    )
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    return True
+
+
+def _enable_receiver_remote(receiver_id: str) -> bool:
+    import httpx
+
+    cfg = AppConfig.load()
+    response = httpx.post(
+        f"http://{connect_host(cfg.host)}:{cfg.port}/api/receivers/{receiver_id}/enable",
+        headers=_auth_headers(),
+        timeout=3,
+    )
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    return True
+
+
+def _disable_receiver(svc: SenderService, receiver_id: str) -> bool:
+    if _server_reachable():
+        return _disable_receiver_remote(receiver_id)
+    return svc.disable_receiver(receiver_id)
+
+
+def _enable_receiver(svc: SenderService, receiver_id: str) -> bool:
+    if _server_reachable():
+        return _enable_receiver_remote(receiver_id)
+    return svc.enable_receiver(receiver_id)
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -106,18 +200,22 @@ def cmd_rm(args: argparse.Namespace) -> None:
 
 
 def cmd_ls(_args: argparse.Namespace) -> None:
-    files = _local_service().list_files_local()
+    svc = _local_service()
+    files = svc.list_files_local()
     table = Table(title="Shared files")
     table.add_column("Name")
     table.add_column("Type")
     table.add_column("Size")
+    table.add_column("Open")
     table.add_column("Status")
     table.add_column("Uploaded")
     for f in files:
+        grants = svc.get_download_grants(f["id"])
         table.add_row(
             f["name"],
             "dir" if f["is_dir"] else "file",
             f["size_human"],
+            _grant_summary(grants, bool(f["is_dir"])),
             f["status"],
             f["uploaded_at"],
         )
@@ -157,21 +255,35 @@ def cmd_receiver_new(args: argparse.Namespace) -> None:
 
 def cmd_receiver_rm(args: argparse.Namespace) -> None:
     svc = _local_service()
-    receivers = svc.db.list_receivers()
-    if not receivers:
-        console.print("No receivers.")
+    rid = _pick_receiver_id(svc, args.id)
+    if not rid:
         return
-    if args.id:
-        rid = args.id
-    else:
-        for i, r in enumerate(receivers):
-            console.print(f"{i + 1}. {r['name']} ({r['id'][:8]}...)")
-        choice = int(console.input("Select number: ")) - 1
-        rid = receivers[choice]["id"]
     if svc.db.remove_receiver(rid):
         console.print("Receiver removed.")
     else:
         console.print("[red]Not found[/red]")
+
+
+def cmd_receiver_disable(args: argparse.Namespace) -> None:
+    svc = _local_service()
+    rid = _pick_receiver_id(svc, args.id)
+    if not rid:
+        return
+    if _disable_receiver(svc, rid):
+        console.print("Receiver disabled.")
+    else:
+        console.print("[red]Not found or already disabled[/red]")
+
+
+def cmd_receiver_enable(args: argparse.Namespace) -> None:
+    svc = _local_service()
+    rid = _pick_receiver_id(svc, args.id)
+    if not rid:
+        return
+    if _enable_receiver(svc, rid):
+        console.print("Receiver enabled.")
+    else:
+        console.print("[red]Not found or not disabled[/red]")
 
 
 def cmd_receiver_ls(_args: argparse.Namespace) -> None:
@@ -186,8 +298,99 @@ def cmd_receiver_ls(_args: argparse.Namespace) -> None:
 
     for r in receivers:
         info = _receiver_to_api(r, svc.base_url)
-        table.add_row(info["name"], info["link"], info["status"], info["pin"])
+        table.add_row(
+            info["name"],
+            info["link"],
+            _receiver_status_label(info["status"]),
+            info["pin"],
+        )
     console.print(table)
+
+
+def cmd_grant_ls(args: argparse.Namespace) -> None:
+    svc = _local_service()
+    if args.item:
+        record = _resolve_shared_file(svc, args.item)
+        grants = svc.get_download_grants(record["id"])
+        kind = "dir" if record["is_dir"] else "file"
+        summary = _grant_summary(grants, bool(record["is_dir"]))
+        console.print(f"{record['name']} ({kind}) — {summary}")
+        if grants and "" not in grants:
+            for path in sorted(grants):
+                console.print(f"  {path or '/'}")
+        return
+
+    files = svc.list_files_local()
+    if not files:
+        console.print("No shared files.")
+        return
+    table = Table(title="Download grants")
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("Open")
+    for f in files:
+        grants = svc.get_download_grants(f["id"])
+        table.add_row(
+            f["name"],
+            "dir" if f["is_dir"] else "file",
+            _grant_summary(grants, bool(f["is_dir"])),
+        )
+    console.print(table)
+
+
+def cmd_grant_open(args: argparse.Namespace) -> None:
+    svc = _local_service()
+    record = _resolve_shared_file(svc, args.item)
+    if args.paths:
+        if not record["is_dir"]:
+            console.print("[red]Subpaths only apply to shared folders[/red]")
+            sys.exit(1)
+        grants = {normalize_relative_path(path) for path in args.paths}
+    else:
+        grants = {""}
+    svc.set_download_grants(record["id"], grants)
+    if "" in grants:
+        console.print(f"Opened for download: {record['name']}")
+    else:
+        console.print(f"Opened {len(grants)} path(s) under {record['name']}")
+
+
+def cmd_grant_close(args: argparse.Namespace) -> None:
+    svc = _local_service()
+    record = _resolve_shared_file(svc, args.item)
+    grants = svc.get_download_grants(record["id"])
+    if args.paths:
+        if "" in grants:
+            console.print("[red]Item is fully open; close all first with: grant close <item>[/red]")
+            sys.exit(1)
+        remove = {normalize_relative_path(path) for path in args.paths}
+        svc.set_download_grants(record["id"], grants - remove)
+        console.print(f"Closed {len(remove)} path(s) under {record['name']}")
+    else:
+        svc.set_download_grants(record["id"], set())
+        console.print(f"Closed for download: {record['name']}")
+
+
+def cmd_grant_open_all(_args: argparse.Namespace) -> None:
+    svc = _local_service()
+    files = svc.db.list_files()
+    if not files:
+        console.print("No shared files.")
+        return
+    for record in files:
+        svc.set_download_grants(record["id"], {""})
+    console.print(f"Opened {len(files)} shared item(s) for download.")
+
+
+def cmd_grant_close_all(_args: argparse.Namespace) -> None:
+    svc = _local_service()
+    files = svc.db.list_files()
+    if not files:
+        console.print("No shared files.")
+        return
+    for record in files:
+        svc.set_download_grants(record["id"], set())
+    console.print(f"Closed {len(files)} shared item(s) for download.")
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
@@ -197,6 +400,9 @@ def cmd_status(_args: argparse.Namespace) -> None:
     console.print(f"http_server: {'running' if online else 'stopped'}")
     _print_access_urls(cfg.port, cfg.host)
     console.print(f"files_count: {len(svc.db.list_files())}")
+    open_count = sum(1 for f in svc.db.list_files() if svc.get_download_grants(f["id"]))
+    console.print(f"open_files_count: {open_count}")
+    console.print(f"catalog_version: {svc.db.get_download_catalog_version()}")
     console.print(f"receivers_count: {len(svc.db.list_receivers())}")
     if online:
         try:
@@ -237,8 +443,12 @@ def cmd_close(_args: argparse.Namespace) -> None:
 
 def cmd_ls_remote(args: argparse.Namespace) -> None:
     host, pin = _resolve_connection(args)
-    files = asyncio.run(ReceiverClient(host, pin).list_files())
-    table = Table(title=f"Remote files @ {host}")
+    token = getattr(args, "token", None)
+    title = f"Remote files @ {host}"
+    if token:
+        title += " (receiver view)"
+    files = asyncio.run(ReceiverClient(host, pin, token=token).list_files())
+    table = Table(title=title)
     table.add_column("Name")
     table.add_column("Type")
     table.add_column("Size")
@@ -258,7 +468,8 @@ def cmd_download(args: argparse.Namespace) -> None:
     host, pin = _resolve_connection(args)
     dest = Path(args.dest or ".").resolve()
     cfg = AppConfig.load()
-    client = ReceiverClient(host, pin, max_parallel=cfg.max_parallel)
+    token = getattr(args, "token", None)
+    client = ReceiverClient(host, pin, token=token, max_parallel=cfg.max_parallel)
 
     progress = Progress(
         TextColumn("[bold blue]{task.fields[label]}", justify="right"),
@@ -329,11 +540,29 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--pin", default=None)
     sp = recv_sub.add_parser("rm")
     sp.add_argument("--id", default=None)
+    sp = recv_sub.add_parser("disable", help="Disable receiver (blocks downloads)")
+    sp.add_argument("--id", default=None)
+    sp = recv_sub.add_parser("enable", help="Re-enable a disabled receiver")
+    sp.add_argument("--id", default=None)
     recv_sub.add_parser("ls")
+
+    grant = sub.add_parser("grant", help="Manage download availability for shared files")
+    grant_sub = grant.add_subparsers(dest="grant_cmd")
+    sp = grant_sub.add_parser("ls", help="List open/closed status")
+    sp.add_argument("item", nargs="?", default=None)
+    sp = grant_sub.add_parser("open", help="Open shared item or subpaths for download")
+    sp.add_argument("item")
+    sp.add_argument("paths", nargs="*", metavar="SUBPATH")
+    sp = grant_sub.add_parser("close", help="Close shared item or subpaths")
+    sp.add_argument("item")
+    sp.add_argument("paths", nargs="*", metavar="SUBPATH")
+    grant_sub.add_parser("open-all", help="Open all shared items")
+    grant_sub.add_parser("close-all", help="Close all shared items")
 
     sp = sub.add_parser("ls-remote")
     sp.add_argument("-H", "--host", required=True)
     sp.add_argument("--pin", required=True)
+    sp.add_argument("--token", default=None, help="Receiver token (shows granted files only)")
 
     sp = sub.add_parser("connect")
     sp.add_argument("-H", "--host", required=True)
@@ -344,6 +573,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-d", "--dest", default=".")
     sp.add_argument("-H", "--host", default=None)
     sp.add_argument("--pin", default=None)
+    sp.add_argument("--token", default=None, help="Receiver token for token-based download")
 
     return p
 
@@ -376,13 +606,30 @@ def main() -> None:
         rc = {
             "new": cmd_receiver_new,
             "rm": cmd_receiver_rm,
+            "disable": cmd_receiver_disable,
+            "enable": cmd_receiver_enable,
             "ls": cmd_receiver_ls,
         }
         fn = rc.get(args.receiver_cmd)
         if fn:
             fn(args)
         else:
-            console.print("Use: receiver new|rm|ls")
+            console.print("Use: receiver new|rm|disable|enable|ls")
+        return
+
+    if args.command == "grant":
+        gc = {
+            "ls": cmd_grant_ls,
+            "open": cmd_grant_open,
+            "close": cmd_grant_close,
+            "open-all": cmd_grant_open_all,
+            "close-all": cmd_grant_close_all,
+        }
+        fn = gc.get(args.grant_cmd)
+        if fn:
+            fn(args)
+        else:
+            console.print("Use: grant ls|open|close|open-all|close-all")
         return
 
     if args.command == "sender":

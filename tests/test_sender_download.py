@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import zipfile
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -93,7 +95,8 @@ def test_disable_receiver_blocks_new_download(tmp_path: Path) -> None:
     assert response.status_code == 403
 
 
-def test_disable_receiver_cancels_active_download(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_disable_receiver_cancels_active_download(tmp_path: Path) -> None:
     shared = tmp_path / "large.bin"
     shared.write_bytes(b"x" * 64)
     cfg = AppConfig(
@@ -105,19 +108,26 @@ def test_disable_receiver_cancels_active_download(tmp_path: Path) -> None:
     svc = SenderService(cfg, Database(tmp_path / "pylocalsend.db"))
     record = svc.register_path(str(shared))
     receiver = svc.create_receiver("laptop", "654321")
-    client = TestClient(svc.app)
 
-    with client.stream(
-        "GET",
-        f"/api/download/{record['id']}",
-        params={"token": receiver["token"], "browser": "1"},
-    ) as response:
-        assert response.status_code == 200
-        first = next(response.iter_bytes(chunk_size=4))
-        assert first == b"xxxx"
+    transport = httpx.ASGITransport(app=svc.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        download = asyncio.create_task(
+            client.get(
+                f"/api/download/{record['id']}",
+                params={"token": receiver["token"], "browser": "1"},
+            )
+        )
+        for _ in range(100):
+            if svc._download_cancel or download.done():
+                break
+            await asyncio.sleep(0)
+
+        assert svc._download_cancel
         assert svc.disable_receiver(receiver["id"]) is True
-        rest = b"".join(response.iter_bytes())
-        assert len(first) + len(rest) < 64
+        response = await download
+
+        assert response.status_code == 200
+        assert len(response.content) < 64
 
     logs = svc.db.list_downloads_for_receiver(receiver["id"])
     assert logs[0]["status"] == "cancelled"

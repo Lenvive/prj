@@ -27,7 +27,15 @@
 - `pylocalsend rm <file1> <dir1> <file2> <dir2> ...`
   - 发送端移除已经上传的文件或文件夹
 - `pylocalsend ls`
-  - 列出服务器文件
+  - 列出服务器文件（含 Open 列：open / closed / partial）
+- `pylocalsend grant ls [item]`
+  - 查看共享项的下载开放状态；指定 item 时列出文件夹下的开放子路径
+- `pylocalsend grant open <item> [subpath ...]`
+  - 开放整项或指定子路径供接收端下载
+- `pylocalsend grant close <item> [subpath ...]`
+  - 关闭整项或指定子路径的下载开放
+- `pylocalsend grant open-all` / `grant close-all`
+  - 一键全部开放 / 全部关闭
 - `pylocalsend config-show [--<config-item>]`
   - 查看配置，可指定具体配置项
 - `pylocalsend config-set --<config-item> <value>`
@@ -38,8 +46,12 @@
   - 创建一个新的接收端，指定接收端名称和 PIN，生成一个接收端链接，接收端可以直接访问 webui 界面连接
 - `pylocalsend receiver rm`
   - 删除一个接收端
+- `pylocalsend receiver disable [--id <receiver-id>]`
+  - 禁用接收端；发送端在线时通过 API 中断进行中的下载
+- `pylocalsend receiver enable [--id <receiver-id>]`
+  - 解除禁用，恢复下载权限
 - `pylocalsend receiver ls`
-  - 列出所有接收端，包括接收端名称，接收端链接，接收端状态
+  - 列出所有接收端，包括接收端名称、接收端链接、接收端状态（正常/已禁用）
 - `pylocalsend status`
   - 查看发送端状态，包括连接状态，上传状态，下载状态等
 - `pylocalsend close`
@@ -47,15 +59,12 @@
 
 #### 接收端命令
 
-- `pylocalsend ls-remote --host|-h http://192.168.1.100:8080 --pin xxxxxx`
-  - 列出远程服务器可下载的文件
+- `pylocalsend ls-remote --host|-h http://192.168.1.100:8080 --pin xxxxxx [--token <token>]`
+  - 列出远程服务器可下载的文件；加 `--token` 时仅显示该接收端可见的已开放项
 - `pylocalsend connect --host|-h http://192.168.1.100:8080 --pin xxxxxx`
   - 连接远程服务器，后续命令无需重复指定主机和 PIN
-- `pylocalsend download <file1> <file2> <dir1> <dir2> ...`
-  - 下载远程文件或文件夹
-  - 并发下载多个文件
-  - 支持断点续传
-  - 要有好看的多文件并行化下载进度条
+- `pylocalsend download <file1> <file2> <dir1> <dir2> ... [--token <token>]`
+  - 下载远程文件或文件夹；`--token` 以接收端身份下载（受开放范围与禁用状态约束）
 
 ### GUI 方法
 

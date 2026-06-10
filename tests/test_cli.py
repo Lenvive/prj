@@ -90,9 +90,20 @@ def test_sender_generates_pin_and_stops_on_keyboard_interrupt(
     calls: dict[str, object] = {"stopped": False}
 
     def fake_start_server(cfg: config_mod.AppConfig, open_browser: bool) -> SimpleNamespace:
+        from pylocalsend.core.utils import network as network_mod
+
         calls["pin"] = cfg.server_pin
         calls["open_browser"] = open_browser
-        return SimpleNamespace(base_url="http://127.0.0.1:8765")
+        return SimpleNamespace(
+            base_url="http://127.0.0.1:8765",
+            access_urls=network_mod.AccessUrls(
+                bind_host="0.0.0.0",
+                port=8765,
+                localhost="http://127.0.0.1:8765",
+                lan=[],
+                public=None,
+            ),
+        )
 
     def fake_sleep(_seconds: int) -> None:
         raise KeyboardInterrupt
@@ -231,7 +242,126 @@ def test_receiver_command_without_subcommand_prints_usage(
 ) -> None:
     run_cli(["receiver"], monkeypatch)
 
-    assert "Use: receiver new|rm|ls" in output.getvalue()
+    assert "Use: receiver new|rm|disable|enable|ls" in output.getvalue()
+
+
+def test_receiver_disable_and_enable_by_id(
+    output: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "_server_reachable", lambda: False)
+    run_cli(["receiver", "new", "--name", "laptop", "--pin", "111222"], monkeypatch)
+    receiver = cli._local_service().db.list_receivers()[0]
+
+    run_cli(["receiver", "disable", "--id", receiver["id"]], monkeypatch)
+    run_cli(["receiver", "ls"], monkeypatch)
+    run_cli(["receiver", "enable", "--id", receiver["id"]], monkeypatch)
+    run_cli(["receiver", "ls"], monkeypatch)
+
+    text = output.getvalue()
+    assert "Receiver disabled." in text
+    assert "已禁用" in text
+    assert "Receiver enabled." in text
+    assert "正常" in text
+    assert cli._local_service().db.get_receiver(receiver["id"])["status"] == "active"
+
+
+def test_grant_open_close_and_ls(
+    tmp_path: Path,
+    output: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared = tmp_path / "shared.txt"
+    shared.write_text("hello", encoding="utf-8")
+    folder = tmp_path / "photos"
+    folder.mkdir()
+    (folder / "a.jpg").write_bytes(b"a")
+    (folder / "b.jpg").write_bytes(b"b")
+
+    run_cli(["upload", str(shared), str(folder)], monkeypatch)
+    run_cli(["grant", "close", str(shared)], monkeypatch)
+    run_cli(["grant", "ls"], monkeypatch)
+    run_cli(["grant", "open", str(shared)], monkeypatch)
+    run_cli(["grant", "open", str(folder), "a.jpg"], monkeypatch)
+    run_cli(["grant", "ls", "photos"], monkeypatch)
+    run_cli(["grant", "close-all"], monkeypatch)
+    run_cli(["grant", "open-all"], monkeypatch)
+
+    text = output.getvalue()
+    svc = cli._local_service()
+    assert "Closed for download: shared.txt" in text
+    assert "Download grants" in text
+    assert "Opened for download: shared.txt" in text
+    assert "Opened 1 path(s) under photos" in text
+    assert "photos (dir) — partial (1)" in text
+    assert "Closed 2 shared item(s) for download." in text
+    assert "Opened 2 shared item(s) for download." in text
+    assert svc.get_download_grants(svc.db.get_file_by_path(str(shared.resolve()))["id"]) == {""}
+
+
+def test_ls_shows_open_column(
+    tmp_path: Path,
+    output: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared = tmp_path / "note.txt"
+    shared.write_text("x", encoding="utf-8")
+    run_cli(["upload", str(shared)], monkeypatch)
+    run_cli(["grant", "close", str(shared)], monkeypatch)
+    run_cli(["ls"], monkeypatch)
+
+    text = output.getvalue()
+    assert "Open" in text
+    assert "closed" in text
+
+
+def test_grant_command_without_subcommand_prints_usage(
+    output: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_cli(["grant"], monkeypatch)
+
+    assert "Use: grant ls|open|close|open-all|close-all" in output.getvalue()
+
+
+def test_ls_remote_with_token_uses_receiver_view(
+    output: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeReceiverClient:
+        def __init__(self, host: str, pin: str, token: str | None = None) -> None:
+            calls["host"] = host
+            calls["pin"] = pin
+            calls["token"] = token
+
+        async def list_files(self) -> list[dict[str, object]]:
+            return [{"name": "visible.txt", "is_dir": False, "size_human": "1 B"}]
+
+    monkeypatch.setattr(cli, "ReceiverClient", FakeReceiverClient)
+
+    run_cli(
+        [
+            "ls-remote",
+            "-H",
+            "http://sender/",
+            "--pin",
+            "123456",
+            "--token",
+            "abc-token",
+        ],
+        monkeypatch,
+    )
+
+    assert calls == {
+        "host": "http://sender",
+        "pin": "123456",
+        "token": "abc-token",
+    }
+    text = output.getvalue()
+    assert "(receiver view)" in text
+    assert "visible.txt" in text
 
 
 def test_connect_saves_trimmed_session(
@@ -275,9 +405,10 @@ def test_ls_remote_lists_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeReceiverClient:
-        def __init__(self, host: str, pin: str) -> None:
+        def __init__(self, host: str, pin: str, token: str | None = None) -> None:
             self.host = host
             self.pin = pin
+            self.token = token
 
         async def list_files(self) -> list[dict[str, object]]:
             return [
@@ -306,9 +437,16 @@ def test_download_uses_resolved_connection_and_configured_parallelism(
     calls: dict[str, object] = {}
 
     class FakeReceiverClient:
-        def __init__(self, host: str, pin: str, max_parallel: int) -> None:
+        def __init__(
+            self,
+            host: str,
+            pin: str,
+            token: str | None = None,
+            max_parallel: int = 4,
+        ) -> None:
             calls["host"] = host
             calls["pin"] = pin
+            calls["token"] = token
             calls["max_parallel"] = max_parallel
 
         async def download_items(
@@ -342,6 +480,7 @@ def test_download_uses_resolved_connection_and_configured_parallelism(
     assert calls == {
         "host": "http://sender",
         "pin": "123456",
+        "token": None,
         "max_parallel": 7,
         "items": ["file.txt"],
         "dest": (tmp_path / "downloads").resolve(),

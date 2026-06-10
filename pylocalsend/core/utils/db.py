@@ -71,11 +71,26 @@ class Database:
                     PRIMARY KEY (file_id, relative_path),
                     FOREIGN KEY (file_id) REFERENCES files(id)
                 );
-                INSERT OR IGNORE INTO download_grants (file_id, relative_path)
-                SELECT id, '' FROM files
-                WHERE id NOT IN (SELECT file_id FROM download_grants);
+                CREATE TABLE IF NOT EXISTS schema_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
+            backfill = conn.execute(
+                "SELECT 1 FROM schema_meta WHERE key = 'grants_backfill'"
+            ).fetchone()
+            if backfill is None:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO download_grants (file_id, relative_path)
+                    SELECT id, '' FROM files
+                    WHERE id NOT IN (SELECT file_id FROM download_grants)
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO schema_meta (key, value) VALUES ('grants_backfill', '1')"
+                )
 
     def add_file(
         self,

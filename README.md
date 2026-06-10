@@ -77,6 +77,15 @@ pylocalsend status
 
 也可以在 `pylocalsend gui` 的“文件传输”页面输入绝对路径并注册。
 
+通过 `grant` 命令管理对接收端的开放范围（与 WebUI 勾选等效）：
+
+```powershell
+pylocalsend grant ls
+pylocalsend grant close D:\photos\vacation
+pylocalsend grant open D:\photos\vacation beach sunset.jpg
+pylocalsend grant open-all
+```
+
 ### 3. 接收端 CLI 下载
 
 每次命令都传入发送端地址和 PIN：
@@ -102,10 +111,20 @@ pylocalsend download file.zip -d D:\downloads
 ```powershell
 pylocalsend receiver new --name laptop --pin 123456
 pylocalsend receiver ls
+pylocalsend receiver disable --id <receiver-id>
+pylocalsend receiver enable --id <receiver-id>
 pylocalsend receiver rm --id <receiver-id>
 ```
 
+禁用接收端后，该 token 无法下载；若发送端服务正在运行，进行中的传输会被中断。省略 `--id` 时可交互选择。
+
 在 `pylocalsend gui` 的“接收端管理”页面也可以创建接收端并复制链接。接收端打开链接后，可以在浏览器页面中选择文件并下载。
+
+以接收端 token 查看可见文件列表（与 WebUI 所见一致）：
+
+```powershell
+pylocalsend ls-remote -H http://192.168.1.100:8765 --pin 123456 --token <token-from-receiver-ls>
+```
 
 接收端 WebUI 的下载由浏览器直接处理，文件会保存到当前浏览器的默认下载目录；如果需要每次选择保存位置，请在浏览器设置中开启“下载前询问保存位置”。这样可以避免服务端 Python 进程把文件误写到发送端电脑。
 
@@ -120,15 +139,22 @@ pylocalsend gui
 pylocalsend upload <file-or-dir> [...]
 pylocalsend ls
 pylocalsend rm <file-or-dir> [...]
+pylocalsend grant ls [item]
+pylocalsend grant open <item> [subpath ...]
+pylocalsend grant close <item> [subpath ...]
+pylocalsend grant open-all
+pylocalsend grant close-all
 
 # 接收端连接和下载
-pylocalsend ls-remote -H <sender-url> --pin <pin>
+pylocalsend ls-remote -H <sender-url> --pin <pin> [--token <token>]
 pylocalsend connect -H <sender-url> --pin <pin>
-pylocalsend download <name-or-id> [...] -d <dest-dir>
+pylocalsend download <name-or-id> [...] -d <dest-dir> [--token <token>]
 
 # 接收端链接
 pylocalsend receiver new --name <name> --pin <pin>
 pylocalsend receiver ls
+pylocalsend receiver disable [--id <receiver-id>]
+pylocalsend receiver enable [--id <receiver-id>]
 pylocalsend receiver rm --id <receiver-id>
 
 # 配置

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import queue
 import threading
@@ -117,7 +118,9 @@ class SenderService:
             return False
         for log_id, rid in list(self._download_receiver.items()):
             if rid == receiver_id:
-                self._download_cancel[log_id].set()
+                cancel = self._download_cancel.get(log_id)
+                if cancel:
+                    cancel.set()
         return True
 
     def enable_receiver(self, receiver_id: str) -> bool:
@@ -320,6 +323,10 @@ class SenderService:
                             return
                         sent += len(chunk)
                         yield chunk
+                        await asyncio.sleep(0)
+                        if cancel.is_set():
+                            svc.db.log_download_finish(log_id, "cancelled", sent)
+                            return
                     if cancel.is_set():
                         svc.db.log_download_finish(log_id, "cancelled", sent)
                         return
