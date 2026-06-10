@@ -9,6 +9,7 @@ from typing import Any
 
 import uvicorn
 from nicegui import ui
+from nicegui.events import ValueChangeEventArguments
 
 from pylocalsend.core.file_handler.file_handler import format_size
 from pylocalsend.core.transfer.server_entry import prepare_service
@@ -16,6 +17,18 @@ from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.crypto import generate_pin
 from pylocalsend.core.utils.network import connect_host
 from pylocalsend.gui.facade import SenderFacade
+from pylocalsend.gui.file_tree import (
+    FileTreeNode,
+    apply_grants_to_selected,
+    compute_grants,
+    count_selected,
+    index_nodes,
+    local_children_to_nodes,
+    local_item_to_node,
+    register_subtree_keys,
+    set_subtree_selected,
+    uncheck_ancestors,
+)
 
 # 原研哉风格：留白、低对比、克制用色
 STYLE = """
@@ -32,9 +45,17 @@ STYLE = """
         border-radius: 2px;
         background: #fff;
     }
+    .file-toolbar {
+        width: min(1360px, 100%);
+        margin-inline: auto;
+        padding: 12px 16px;
+        border: 1px solid #e8e8e8;
+        border-radius: 2px;
+        background: #fff;
+    }
     .file-row {
         display: grid;
-        grid-template-columns: 260px 90px 110px minmax(300px, 1fr) 160px minmax(300px, auto);
+        grid-template-columns: 40px minmax(240px, 1.2fr) 90px 110px minmax(280px, 1fr) 160px minmax(220px, auto);
         gap: 16px;
         align-items: center;
         box-sizing: border-box;
@@ -47,6 +68,7 @@ STYLE = """
     .file-row:last-child { border-bottom: none; }
     .file-row-head { min-height: 36px; color: #888; font-size: 0.78rem; background: #fcfcfc; }
     .file-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .select-cell { display: flex; align-items: center; justify-content: center; }
     .file-name-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .file-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .expand-spacer { width: 28px; min-width: 28px; }
@@ -115,9 +137,63 @@ def run_sender_gui() -> None:
 
 
 def _files_tab(facade: SenderFacade) -> None:
-    path_input = ui.input("绝对路径（文件或文件夹）").classes("w-full").props("outlined dense")
-    expanded_paths: set[str] = set()
+    with ui.row().classes("w-full items-end gap-3"):
+        path_input = ui.input("绝对路径（文件或文件夹）").classes("grow").props("outlined dense")
+        upload_btn = ui.button("确认上传").props("unelevated color=primary")
+    expanded: set[str] = set()
+    selected: dict[str, bool] = {}
+    root_nodes: list[FileTreeNode] = []
     files_container = ui.column().classes("w-full gap-3")
+
+    with ui.element("div").classes("file-toolbar"):
+        with ui.row().classes("w-full items-center justify-between gap-3"):
+            selected_label = ui.label("已开放 0 项可下载").classes("muted")
+            with ui.row().classes("gap-2"):
+                ui.button("全部开放", on_click=lambda _e: enable_all()).props("flat dense")
+                ui.button("全部关闭", on_click=lambda _e: disable_all()).props("flat dense")
+
+    ui.label("勾选表示对接收端开放下载；未勾选项接收端不可见也不可下载。").classes("muted")
+
+    def update_selection_summary() -> None:
+        selected_label.text = f"已开放 {count_selected(selected)} 项可下载"
+
+    def persist_grants(root_node: FileTreeNode) -> None:
+        if not root_node.file_id:
+            return
+        facade.set_download_grants(root_node.file_id, compute_grants(root_node, selected))
+
+    def ensure_local_children(node: FileTreeNode, root_base: str | None) -> None:
+        if not node.is_dir or not node.raw:
+            return
+        if not node.children:
+            children = facade.folder_path_contents(str(node.raw["path"]))
+            node.children = local_children_to_nodes(node, children, root_base=root_base)
+            register_subtree_keys(selected, node)
+        for child in node.children:
+            if child.is_dir:
+                ensure_local_children(child, root_base)
+
+    def enable_all() -> None:
+        for node in root_nodes:
+            base = str(node.raw["path"]) if node.raw and node.is_dir else None
+            if node.is_dir:
+                ensure_local_children(node, base)
+            set_subtree_selected(selected, node, True)
+            if node.file_id:
+                facade.set_download_grants(node.file_id, {""})
+        update_selection_summary()
+        refresh()
+        ui.notify("已全部开放下载", type="positive")
+
+    def disable_all() -> None:
+        for key in list(selected):
+            selected[key] = False
+        for node in root_nodes:
+            if node.file_id:
+                facade.set_download_grants(node.file_id, set())
+        update_selection_summary()
+        refresh()
+        ui.notify("已全部关闭下载", type="info")
 
     def refresh() -> None:
         files_container.clear()
@@ -127,15 +203,51 @@ def _files_tab(facade: SenderFacade) -> None:
                 ui.label("暂无已注册文件。").classes("muted")
                 return
 
+            old_by_id = {n.file_id: n for n in root_nodes if n.file_id}
+            root_nodes.clear()
+            for item in files:
+                file_id = str(item["id"])
+                if file_id in old_by_id:
+                    node = old_by_id[file_id]
+                    node.raw = item
+                    node.name = str(item["name"])
+                    node.is_dir = bool(item["is_dir"])
+                else:
+                    node = local_item_to_node(item, registered=True)
+                register_subtree_keys(selected, node)
+                apply_grants_to_selected(node, facade.get_download_grants(file_id), selected)
+                if node.key in expanded:
+                    ensure_local_children(
+                        node,
+                        str(item["path"]) if item["is_dir"] else None,
+                    )
+                root_nodes.append(node)
+
+            root_keys = {node.key for node in root_nodes}
+            for key in list(selected):
+                if key.startswith("root:") and key not in root_keys:
+                    selected.pop(key, None)
+            update_selection_summary()
+
+            nodes_by_key, parent_by_key = index_nodes(root_nodes)
+
             with ui.element("div").classes("file-tree"):
                 _render_file_header()
-                for f in files:
+                for node in root_nodes:
                     _render_file_node(
                         facade,
-                        f,
+                        node,
                         depth=0,
-                        expanded_paths=expanded_paths,
+                        expanded=expanded,
+                        selected=selected,
+                        nodes_by_key=nodes_by_key,
+                        parent_by_key=parent_by_key,
+                        root_base=str(node.raw["path"]) if node.raw and node.is_dir else None,
+                        ensure_local_children=ensure_local_children,
                         refresh=refresh,
+                        update_selection_summary=update_selection_summary,
+                        persist_grants=persist_grants,
+                        file_root=node,
                         registered=True,
                     )
 
@@ -152,12 +264,13 @@ def _files_tab(facade: SenderFacade) -> None:
         except Exception as ex:
             ui.notify(str(ex), type="negative")
 
-    ui.button("确认上传", on_click=do_upload).props("unelevated color=primary")
+    upload_btn.on_click(do_upload)
     refresh()
 
 
 def _render_file_header() -> None:
     with ui.element("div").classes("file-row file-row-head"):
+        ui.label("开放").classes("select-cell")
         ui.label("名称").classes("file-cell")
         ui.label("类型").classes("file-cell")
         ui.label("大小").classes("file-cell")
@@ -168,66 +281,106 @@ def _render_file_header() -> None:
 
 def _render_file_node(
     facade: SenderFacade,
-    item: dict[str, Any],
+    node: FileTreeNode,
     *,
     depth: int,
-    expanded_paths: set[str],
+    expanded: set[str],
+    selected: dict[str, bool],
+    nodes_by_key: dict[str, FileTreeNode],
+    parent_by_key: dict[str, str],
+    root_base: str | None,
+    ensure_local_children: Any,
     refresh: Any,
+    update_selection_summary: Any,
+    persist_grants: Any,
+    file_root: FileTreeNode,
     registered: bool,
 ) -> None:
-    is_dir = bool(item["is_dir"])
-    path = str(item["path"])
-    expanded = path in expanded_paths
+    item = node.raw or {"name": node.name, "is_dir": node.is_dir, "path": node.relative_path}
+    is_dir = node.is_dir
+    is_expanded = node.key in expanded
 
-    def toggle() -> None:
-        if path in expanded_paths:
-            expanded_paths.remove(path)
+    def toggle_expand() -> None:
+        if node.key in expanded:
+            expanded.remove(node.key)
         else:
-            expanded_paths.add(path)
+            expanded.add(node.key)
+            ensure_local_children(node, root_base)
+        refresh()
+
+    def toggle_selection(e: ValueChangeEventArguments[bool | None]) -> None:
+        checked = bool(e.value)
+        if checked and is_dir:
+            ensure_local_children(node, root_base)
+        set_subtree_selected(selected, node, checked)
+        if not checked:
+            uncheck_ancestors(node, parent_by_key, nodes_by_key, selected)
+        persist_grants(file_root)
+        update_selection_summary()
         refresh()
 
     with ui.element("div").classes("file-row"):
+        with ui.element("div").classes("select-cell"):
+            ui.checkbox(
+                value=bool(selected.get(node.key, False)),
+                on_change=toggle_selection,
+            ).props("dense")
         with ui.element("div").classes("file-cell file-name-cell").style(f"padding-left: {depth * 22}px"):
             if is_dir:
-                ui.button("−" if expanded else "+", on_click=toggle).props("flat dense round").classes("text-grey-7")
+                ui.button("−" if is_expanded else "+", on_click=toggle_expand).props("flat dense round").classes("text-grey-7")
             else:
                 ui.element("span").classes("expand-spacer")
             ui.icon("folder" if is_dir else "insert_drive_file").classes("text-grey-7")
-            ui.label(str(item["name"])).classes("file-name-text")
+            ui.label(node.name).classes("file-name-text")
         ui.label("文件夹" if is_dir else "文件").classes("file-cell muted")
         ui.label(_file_size_text(item)).classes("file-cell muted")
-        ui.label(str(item["path"])).classes("file-cell muted")
+        ui.label(str(item.get("path", node.relative_path))).classes("file-cell muted")
         ui.label(_file_time_text(item, registered)).classes("file-cell muted")
         with ui.row().classes("gap-1"):
             ui.button(
                 "详情",
-                on_click=lambda _e, node=dict(item), is_registered=registered: _show_file_details(
-                    node,
+                on_click=lambda _e, n=dict(item), is_registered=registered: _show_file_details(
+                    n,
                     is_registered,
                 ),
             ).props("flat dense")
-            if registered:
-                ui.button("下载记录", on_click=lambda _e, fid=item["id"]: _show_downloads(facade, fid)).props("flat dense")
-                ui.button("删除", on_click=lambda _e, fid=item["id"]: _remove_file(facade, fid, refresh)).props("flat dense color=negative")
+            if registered and node.file_id:
+                ui.button(
+                    "下载记录",
+                    on_click=lambda _e, fid=node.file_id: _show_downloads(facade, fid),
+                ).props("flat dense")
+                ui.button(
+                    "删除",
+                    on_click=lambda _e, fid=node.file_id: _remove_file(facade, fid, refresh),
+                ).props("flat dense color=negative")
 
-    if is_dir and expanded:
-        try:
-            children = facade.folder_path_contents(path)
-        except Exception as ex:
-            ui.label(f"无法读取目录：{ex}").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
-            return
+    if is_dir and is_expanded:
+        if not node.children:
+            try:
+                ensure_local_children(node, root_base)
+            except Exception as ex:
+                ui.label(f"无法读取目录：{ex}").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
+                return
 
-        if not children:
+        if not node.children:
             ui.label("空文件夹").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
             return
 
-        for child in children:
+        for child in node.children:
             _render_file_node(
                 facade,
                 child,
                 depth=depth + 1,
-                expanded_paths=expanded_paths,
+                expanded=expanded,
+                selected=selected,
+                nodes_by_key=nodes_by_key,
+                parent_by_key=parent_by_key,
+                root_base=root_base,
+                ensure_local_children=ensure_local_children,
                 refresh=refresh,
+                update_selection_summary=update_selection_summary,
+                persist_grants=persist_grants,
+                file_root=file_root,
                 registered=False,
             )
 

@@ -57,6 +57,15 @@ class ReceiverClient:
             r.raise_for_status()
             return r.json()
 
+    async def get_catalog_version(self) -> str:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{self.host}/api/files/catalog-version",
+                headers=self._headers,
+            )
+            r.raise_for_status()
+            return str(r.json()["version"])
+
     async def download_items(
         self,
         names_or_ids: list[str],

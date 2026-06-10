@@ -50,6 +50,12 @@ class SenderFacade:
     def file_downloads(self, file_id: str) -> list[dict[str, Any]]:
         return self.service.db.list_downloads_for_file(file_id)
 
+    def get_download_grants(self, file_id: str) -> set[str]:
+        return self.service.get_download_grants(file_id)
+
+    def set_download_grants(self, file_id: str, relative_paths: set[str]) -> None:
+        self.service.set_download_grants(file_id, relative_paths)
+
     def list_receivers(self) -> list[dict[str, Any]]:
         from pylocalsend.core.transfer.sender import _receiver_to_api
         return [

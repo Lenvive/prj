@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -64,6 +65,15 @@ class Database:
                     bytes_sent INTEGER DEFAULT 0,
                     FOREIGN KEY (file_id) REFERENCES files(id)
                 );
+                CREATE TABLE IF NOT EXISTS download_grants (
+                    file_id TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    PRIMARY KEY (file_id, relative_path),
+                    FOREIGN KEY (file_id) REFERENCES files(id)
+                );
+                INSERT OR IGNORE INTO download_grants (file_id, relative_path)
+                SELECT id, '' FROM files
+                WHERE id NOT IN (SELECT file_id FROM download_grants);
                 """
             )
 
@@ -85,6 +95,14 @@ class Database:
                 """,
                 (file_id, path, name, int(is_dir), size, mtime, _utcnow()),
             )
+            conn.execute(
+                "DELETE FROM download_grants WHERE file_id = ?",
+                (file_id,),
+            )
+            conn.execute(
+                "INSERT INTO download_grants (file_id, relative_path) VALUES (?, '')",
+                (file_id,),
+            )
 
     def remove_file_by_path(self, path: str) -> bool:
         with self._conn() as conn:
@@ -93,6 +111,7 @@ class Database:
 
     def remove_file_by_id(self, file_id: str) -> bool:
         with self._conn() as conn:
+            conn.execute("DELETE FROM download_grants WHERE file_id = ?", (file_id,))
             cur = conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
             return cur.rowcount > 0
 
@@ -217,6 +236,46 @@ class Database:
                 (file_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_download_grants(self, file_id: str) -> set[str]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT relative_path FROM download_grants WHERE file_id = ?",
+                (file_id,),
+            ).fetchall()
+        return {str(row["relative_path"]) for row in rows}
+
+    def set_download_grants(self, file_id: str, relative_paths: set[str]) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM download_grants WHERE file_id = ?", (file_id,))
+            for path in relative_paths:
+                conn.execute(
+                    "INSERT INTO download_grants (file_id, relative_path) VALUES (?, ?)",
+                    (file_id, path),
+                )
+
+    def has_download_grants(self, file_id: str) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM download_grants WHERE file_id = ? LIMIT 1",
+                (file_id,),
+            ).fetchone()
+        return row is not None
+
+    def get_download_catalog_version(self) -> str:
+        with self._conn() as conn:
+            grant_rows = conn.execute(
+                """
+                SELECT file_id, relative_path
+                FROM download_grants
+                ORDER BY file_id, relative_path
+                """
+            ).fetchall()
+            file_rows = conn.execute(
+                "SELECT id, name, size, mtime FROM files ORDER BY id"
+            ).fetchall()
+        payload = repr([tuple(row) for row in grant_rows]) + repr([tuple(row) for row in file_rows])
+        return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     def list_downloads_for_receiver(self, receiver_id: str) -> list[dict[str, Any]]:
         with self._conn() as conn:

@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from pylocalsend.core.file_handler.download_grants import filter_tree_entries, is_path_granted
 from pylocalsend.core.file_handler.file_handler import (
     FileEntry,
     format_size,
@@ -122,6 +123,24 @@ class SenderService:
     def enable_receiver(self, receiver_id: str) -> bool:
         return self.db.enable_receiver(receiver_id)
 
+    def get_download_grants(self, file_id: str) -> set[str]:
+        return self.db.get_download_grants(file_id)
+
+    def set_download_grants(self, file_id: str, relative_paths: set[str]) -> None:
+        self.db.set_download_grants(file_id, relative_paths)
+
+    def _list_downloadable_files(self) -> list[dict[str, Any]]:
+        return [
+            f for f in self.db.list_files()
+            if self.db.has_download_grants(f["id"])
+        ]
+
+    def _ensure_download_allowed(self, file_id: str, relative: str | None) -> None:
+        grants = self.db.get_download_grants(file_id)
+        rel = relative or ""
+        if not is_path_granted(rel, grants):
+            raise HTTPException(403, "Download not allowed")
+
     def _mount_routes(self) -> None:
         svc = self
 
@@ -163,7 +182,12 @@ class SenderService:
 
         @self.app.get("/api/files")
         async def list_files(auth: tuple[str, str | None] = Depends(require_auth)) -> list[dict]:
-            return [_file_to_api(f) for f in svc.db.list_files()]
+            records = svc._list_downloadable_files() if auth[1] else svc.db.list_files()
+            return [_file_to_api(f) for f in records]
+
+        @self.app.get("/api/files/catalog-version")
+        async def catalog_version(auth: tuple[str, str | None] = Depends(require_auth)) -> dict:
+            return {"version": svc.db.get_download_catalog_version()}
 
         @self.app.post("/api/files")
         async def register_files(
@@ -208,24 +232,30 @@ class SenderService:
             record = svc.db.get_file(file_id)
             if not record:
                 raise HTTPException(404, "Not found")
+            grants = svc.db.get_download_grants(file_id)
+            if auth[1] and not grants:
+                raise HTTPException(404, "Not found")
             root = Path(record["path"])
             if root.is_file():
-                return [
+                items = [
                     {
                         "relative_path": record["name"],
                         "size": record["size"],
                         "file_id": file_id,
                     }
                 ]
-            items = []
-            for fp, size in iter_files_recursive(root):
-                items.append(
-                    {
-                        "relative_path": relative_to_root(fp, root),
-                        "size": size,
-                        "absolute_path": str(fp),
-                    }
-                )
+            else:
+                items = []
+                for fp, size in iter_files_recursive(root):
+                    items.append(
+                        {
+                            "relative_path": relative_to_root(fp, root),
+                            "size": size,
+                            "absolute_path": str(fp),
+                        }
+                    )
+            if auth[1]:
+                items = filter_tree_entries(items, grants)
             return items
 
         @self.app.get("/api/files/{file_id}/downloads")
@@ -260,6 +290,8 @@ class SenderService:
                     raise HTTPException(403, "Path traversal denied")
             else:
                 file_path = root
+
+            svc._ensure_download_allowed(file_id, relative)
 
             if not file_path.is_file():
                 raise HTTPException(404, "File not found on disk")
@@ -310,14 +342,12 @@ class SenderService:
             }
             if request.headers.get("range"):
                 headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-                headers["Content-Length"] = str(length)
                 return StreamingResponse(
                     stream(),
                     status_code=206,
                     media_type="application/octet-stream",
                     headers=headers,
                 )
-            headers["Content-Length"] = str(file_size)
             return StreamingResponse(
                 stream(),
                 media_type="application/octet-stream",
@@ -344,6 +374,10 @@ class SenderService:
             if not root.is_dir():
                 raise HTTPException(404, "Directory not found on disk")
 
+            grants = svc.db.get_download_grants(file_id)
+            if not grants:
+                raise HTTPException(403, "Download not allowed")
+
             downloader = request.headers.get("X-Downloader", "browser")
             log_id = svc.db.log_download_start(file_id, downloader, receiver_id)
             cancel = svc._register_download(log_id, receiver_id)
@@ -352,7 +386,12 @@ class SenderService:
             def stream() -> Iterator[bytes]:
                 sent = 0
                 try:
-                    for chunk in _stream_directory_zip(root, str(record["name"]), svc.config.chunk_size):
+                    for chunk in _stream_directory_zip(
+                        root,
+                        str(record["name"]),
+                        svc.config.chunk_size,
+                        grants=grants,
+                    ):
                         if cancel.is_set():
                             svc.db.log_download_finish(log_id, "cancelled", sent)
                             return
@@ -524,7 +563,13 @@ def _receiver_to_api(record: dict[str, Any] | None, base_url: str) -> dict[str, 
     }
 
 
-def _stream_directory_zip(root: Path, root_name: str, chunk_size: int) -> Iterator[bytes]:
+def _stream_directory_zip(
+    root: Path,
+    root_name: str,
+    chunk_size: int,
+    *,
+    grants: set[str] | None = None,
+) -> Iterator[bytes]:
     """Stream a folder as ZIP without first writing the archive to disk."""
     chunks: queue.Queue[bytes | BaseException | None] = queue.Queue(maxsize=8)
 
@@ -547,6 +592,9 @@ def _stream_directory_zip(root: Path, root_name: str, chunk_size: int) -> Iterat
             ) as archive:
                 for file_path, _size in iter_files_recursive(root):
                     arcname = f"{root_name}/{relative_to_root(file_path, root)}"
+                    rel = relative_to_root(file_path, root)
+                    if grants is not None and not is_path_granted(rel, grants):
+                        continue
                     with archive.open(arcname, "w", force_zip64=True) as zip_entry:
                         with file_path.open("rb") as source:
                             while data := source.read(chunk_size):

@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.parse import urlencode
 
 from nicegui import ui
+from nicegui.events import ValueChangeEventArguments
 
 from pylocalsend.core.receiver.receiver import ReceiverClient
 from pylocalsend.core.transfer.server_entry import get_service
 from pylocalsend.core.utils.config import AppConfig
+from pylocalsend.core.file_handler.file_handler import format_size
+from pylocalsend.gui.file_tree import (
+    FileTreeNode,
+    api_item_to_node,
+    count_selected,
+    index_nodes,
+    iter_nodes,
+    register_subtree_keys,
+    resolve_browser_download_urls,
+    set_subtree_selected,
+    tree_entries_to_nodes,
+    tree_has_sizes,
+    uncheck_ancestors,
+)
 
 STYLE = """
 <style>
@@ -36,7 +50,7 @@ STYLE = """
     }
     .file-row {
         display: grid;
-        grid-template-columns: 260px 90px 110px minmax(300px, 1fr) 160px minmax(300px, auto);
+        grid-template-columns: 40px minmax(240px, 1.2fr) 90px 110px minmax(280px, 1fr) 160px 120px;
         gap: 16px;
         align-items: center;
         box-sizing: border-box;
@@ -49,6 +63,7 @@ STYLE = """
     .file-row:last-child { border-bottom: none; }
     .file-row-head { min-height: 36px; color: #888; font-size: 0.78rem; background: #fcfcfc; }
     .file-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .select-cell { display: flex; align-items: center; justify-content: center; }
     .file-name-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .file-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .expand-spacer { width: 28px; min-width: 28px; }
@@ -62,31 +77,6 @@ STYLE = """
         border: 1px solid #e8e8e8;
         border-radius: 2px;
         background: #fff;
-    }
-    .progress-item {
-        padding: 10px 0;
-        border-bottom: 1px solid #f0f0f0;
-    }
-    .progress-item:last-child { border-bottom: none; }
-    .progress-meta {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 6px;
-        font-size: 0.85rem;
-    }
-    .progress-name {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: #333;
-    }
-    .progress-percent {
-        min-width: 52px;
-        text-align: right;
-        color: #666;
-        font-variant-numeric: tabular-nums;
     }
 </style>
 """
@@ -123,9 +113,11 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
         file_list = ui.column().classes("w-full gap-3")
         selected: dict[str, bool] = {}
         expanded: set[str] = set()
-        current_files: list[dict[str, Any]] = []
+        root_nodes: list[FileTreeNode] = []
+        catalog_state: dict[str, str | None] = {"version": None}
 
         ui.label("文件会保存到当前浏览器的下载目录；如需每次选择位置，请开启浏览器的“下载前询问保存位置”。").classes("muted")
+        ui.label("列表会自动同步发送端开放的文件，无需手动刷新。").classes("muted")
         with ui.element("div").classes("file-toolbar"):
             with ui.row().classes("w-full items-center justify-between gap-3"):
                 selected_label = ui.label("已选择 0 项").classes("muted")
@@ -137,77 +129,153 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
                         download_btn.disable()
 
         def update_selection_summary() -> None:
-            count = sum(1 for value in selected.values() if value)
+            count = count_selected(selected)
             selected_label.text = f"已选择 {count} 项"
             if count and not receiver_disabled:
                 download_btn.enable()
             else:
                 download_btn.disable()
 
-        async def select_all() -> None:
-            for f in current_files:
-                selected[str(f["id"])] = True
-            update_selection_summary()
-            await load_files()
-            ui.notify("已选择全部顶层项目", type="positive")
-
-        async def clear_selection() -> None:
-            for fid in list(selected):
-                selected[fid] = False
-            update_selection_summary()
-            await load_files()
-            ui.notify("已清空选择", type="info")
-
-        async def load_files() -> None:
-            file_list.clear()
-            try:
-                files = await client.list_files()
-            except Exception as ex:
-                with file_list:
-                    ui.label(f"无法加载文件列表：{ex}").classes("text-negative")
+        async def ensure_children(node: FileTreeNode, *, force: bool = False) -> None:
+            if not node.is_dir or not node.file_id:
                 return
+            if force:
+                node.children = []
+            elif node.children and tree_has_sizes(node):
+                return
+            tree = await client.get_tree(node.file_id)
+            node.children = tree_entries_to_nodes(node.file_id, node.name, tree)
+            register_subtree_keys(selected, node)
 
-            current_files.clear()
-            current_files.extend(files)
-            for f in files:
-                selected.setdefault(str(f["id"]), False)
-            selected_keys = {str(f["id"]) for f in files}
-            for fid in list(selected):
-                if fid not in selected_keys:
-                    selected.pop(fid)
+        def prune_selection() -> None:
+            valid_keys = {n.key for root in root_nodes for n in iter_nodes(root)}
+            for key in list(selected):
+                if key not in valid_keys:
+                    selected.pop(key, None)
+
+        async def refresh_expanded_trees(*, force: bool = False) -> None:
+            for node in root_nodes:
+                if not node.is_dir:
+                    continue
+                if node.key in expanded:
+                    await ensure_children(node, force=force)
+                elif force:
+                    node.children = []
+
+        async def sync_from_server(*, force_trees: bool = False) -> None:
+            files = await client.list_files()
+            await sync_root_nodes(files)
+            await refresh_expanded_trees(force=force_trees)
+            prune_selection()
+            catalog_state["version"] = await client.get_catalog_version()
             update_selection_summary()
+            render_tree()
 
+        async def sync_root_nodes(files: list[dict[str, Any]]) -> None:
+            old_by_id = {n.file_id: n for n in root_nodes if n.file_id}
+            merged: list[FileTreeNode] = []
+            for item in files:
+                file_id = str(item["id"])
+                if file_id in old_by_id:
+                    node = old_by_id[file_id]
+                    node.raw = item
+                    node.name = str(item["name"])
+                    node.is_dir = bool(item["is_dir"])
+                else:
+                    node = api_item_to_node(item)
+                register_subtree_keys(selected, node)
+                if node.is_dir and node.key in expanded:
+                    await ensure_children(node)
+                merged.append(node)
+            root_nodes[:] = merged
+
+            active_root_ids = {n.file_id for n in root_nodes if n.file_id}
+            root_keys = {n.key for n in root_nodes}
+            for key in list(selected):
+                if key.startswith("root:") and key not in root_keys:
+                    selected.pop(key, None)
+                elif key.startswith("child:"):
+                    parts = key.split(":", 2)
+                    if len(parts) >= 2 and parts[1] not in active_root_ids:
+                        selected.pop(key, None)
+
+        def render_tree() -> None:
+            file_list.clear()
             with file_list:
-                if not files:
+                if not root_nodes:
                     ui.label("暂无可下载文件。").classes("muted")
                     return
 
+                nodes_by_key, parent_by_key = index_nodes(root_nodes)
                 with ui.element("div").classes("file-tree"):
                     _render_file_header()
-                    for f in files:
-                        await _render_remote_node(
-                            client,
-                            f,
-                            selected,
-                            expanded,
-                            load_files,
-                            update_selection_summary,
+                    for node in root_nodes:
+                        _render_tree_node(
+                            node,
+                            selected=selected,
+                            expanded=expanded,
+                            nodes_by_key=nodes_by_key,
+                            parent_by_key=parent_by_key,
+                            ensure_children=ensure_children,
+                            render_tree=render_tree,
+                            update_selection_summary=update_selection_summary,
+                            depth=0,
                         )
+
+        async def select_all() -> None:
+            for node in root_nodes:
+                if node.is_dir:
+                    await ensure_children(node)
+                set_subtree_selected(selected, node, True)
+            update_selection_summary()
+            render_tree()
+            ui.notify("已选择全部项目", type="positive")
+
+        def clear_selection() -> None:
+            for key in list(selected):
+                selected[key] = False
+            update_selection_summary()
+            render_tree()
+            ui.notify("已清空选择", type="info")
+
+        async def load_files() -> None:
+            try:
+                await sync_from_server(force_trees=True)
+            except Exception as ex:
+                file_list.clear()
+                with file_list:
+                    ui.label(f"无法加载文件列表：{ex}").classes("text-negative")
+
+        async def poll_updates() -> None:
+            if receiver_disabled:
+                return
+            try:
+                version = await client.get_catalog_version()
+            except Exception:
+                return
+            if catalog_state["version"] is None:
+                catalog_state["version"] = version
+                return
+            if version == catalog_state["version"]:
+                return
+            try:
+                await sync_from_server(force_trees=True)
+            except Exception:
+                return
 
         async def do_download() -> None:
             if receiver_disabled:
                 ui.notify("该接收端已被禁用", type="negative")
                 return
-            ids = [fid for fid, on in selected.items() if on]
-            if not ids:
+            if not count_selected(selected):
                 ui.notify("请选择文件", type="warning")
                 return
-            records = {str(f["id"]): f for f in current_files}
-            urls = [
-                _browser_download_url(records[fid], token=token, pin=pin)
-                for fid in ids
-                if fid in records
-            ]
+            urls = resolve_browser_download_urls(
+                selected,
+                root_nodes,
+                token=token,
+                pin=pin,
+            )
             if not urls:
                 ui.notify("没有可下载的文件", type="warning")
                 return
@@ -226,15 +294,17 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
         update_selection_summary()
 
         with ui.row().classes("gap-2"):
-            ui.button("刷新列表", on_click=load_files).props("flat")
+            ui.button("立即刷新", on_click=load_files).props("flat")
         progress_area = ui.column().classes("progress-panel")
         with progress_area:
             ui.label("等待下载任务...").classes("muted")
         ui.timer(0.1, load_files, once=True)
+        ui.timer(2.0, poll_updates)
 
 
 def _render_file_header() -> None:
     with ui.element("div").classes("file-row file-row-head"):
+        ui.label("").classes("select-cell")
         ui.label("名称").classes("file-cell")
         ui.label("类型").classes("file-cell")
         ui.label("大小").classes("file-cell")
@@ -243,186 +313,101 @@ def _render_file_header() -> None:
         ui.label("操作").classes("file-cell")
 
 
-async def _render_remote_node(
-    client: ReceiverClient,
-    item: dict[str, Any],
+def _render_tree_node(
+    node: FileTreeNode,
+    *,
     selected: dict[str, bool],
     expanded: set[str],
-    refresh: Any,
+    nodes_by_key: dict[str, FileTreeNode],
+    parent_by_key: dict[str, str],
+    ensure_children: Any,
+    render_tree: Any,
     update_selection_summary: Any,
-    *,
-    depth: int = 0,
-    parent_name: str | None = None,
-) -> None:
-    is_dir = bool(item["is_dir"])
-    fid = str(item["id"])
-    expanded_key = _node_key(item)
-    is_expanded = expanded_key in expanded
-
-    async def toggle() -> None:
-        if expanded_key in expanded:
-            expanded.remove(expanded_key)
-        else:
-            expanded.add(expanded_key)
-        await refresh()
-
-    with ui.element("div").classes("file-row"):
-        with ui.element("div").classes("file-cell file-name-cell").style(f"padding-left: {depth * 22}px"):
-            if is_dir:
-                ui.button("−" if is_expanded else "+", on_click=toggle).props("flat dense round").classes("text-grey-7")
-            else:
-                ui.element("span").classes("expand-spacer")
-            ui.icon("folder" if is_dir else "insert_drive_file").classes("text-grey-7")
-            ui.label(str(item["name"])).classes("file-name-text")
-        ui.label("文件夹" if is_dir else "文件").classes("file-cell muted")
-        ui.label(_size_text(item)).classes("file-cell muted")
-        ui.label(_location_text(item, parent_name)).classes("file-cell muted")
-        ui.label(_time_text(item)).classes("file-cell muted")
-        with ui.row().classes("gap-1"):
-            if depth == 0:
-                select_button = ui.button(
-                    "取消选择" if selected.get(fid, False) else "选择下载",
-                ).props("flat dense")
-                select_button.on(
-                    "click",
-                    lambda _e, file_id=fid, button=select_button: _toggle_selected(
-                        selected,
-                        file_id,
-                        update_selection_summary,
-                        button,
-                    ),
-                )
-            ui.button("详情", on_click=lambda _e, node=dict(item): _show_details(node)).props("flat dense")
-
-    if is_dir and is_expanded:
-        try:
-            tree = await client.get_tree(fid)
-        except Exception as ex:
-            ui.label(f"无法读取目录：{ex}").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
-            return
-        children = _tree_entries_to_nodes(str(item["name"]), tree)
-        if not children:
-            ui.label("空文件夹").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
-            return
-        for child in children:
-            _render_tree_node(child, expanded, refresh, depth=depth + 1)
-
-
-def _render_tree_node(
-    item: dict[str, Any],
-    expanded: set[str],
-    refresh: Any,
-    *,
     depth: int,
 ) -> None:
-    is_dir = bool(item["is_dir"])
-    key = _node_key(item)
-    is_expanded = key in expanded
+    is_dir = node.is_dir
+    is_expanded = node.key in expanded
 
-    async def toggle() -> None:
-        if key in expanded:
-            expanded.remove(key)
+    async def toggle_expand() -> None:
+        if node.key in expanded:
+            expanded.remove(node.key)
         else:
-            expanded.add(key)
-        await refresh()
+            expanded.add(node.key)
+            await ensure_children(node)
+        render_tree()
 
+    async def toggle_selection(e: ValueChangeEventArguments[bool | None]) -> None:
+        checked = bool(e.value)
+        if checked and is_dir:
+            await ensure_children(node)
+        set_subtree_selected(selected, node, checked)
+        if not checked:
+            uncheck_ancestors(node, parent_by_key, nodes_by_key, selected)
+        update_selection_summary()
+        render_tree()
+
+    item = node.raw or {}
     with ui.element("div").classes("file-row"):
+        with ui.element("div").classes("select-cell"):
+            ui.checkbox(
+                value=bool(selected.get(node.key, False)),
+                on_change=toggle_selection,
+            ).props("dense")
         with ui.element("div").classes("file-cell file-name-cell").style(f"padding-left: {depth * 22}px"):
             if is_dir:
-                ui.button("−" if is_expanded else "+", on_click=toggle).props("flat dense round").classes("text-grey-7")
+                ui.button("−" if is_expanded else "+", on_click=toggle_expand).props("flat dense round").classes("text-grey-7")
             else:
                 ui.element("span").classes("expand-spacer")
             ui.icon("folder" if is_dir else "insert_drive_file").classes("text-grey-7")
-            ui.label(str(item["name"])).classes("file-name-text")
+            ui.label(node.name).classes("file-name-text")
         ui.label("文件夹" if is_dir else "文件").classes("file-cell muted")
         ui.label(_size_text(item)).classes("file-cell muted")
-        ui.label(str(item["path"])).classes("file-cell muted")
-        ui.label("-").classes("file-cell muted")
-        ui.button("详情", on_click=lambda _e, node=dict(item): _show_details(node)).props("flat dense")
+        ui.label(_location_text(node)).classes("file-cell muted")
+        ui.label(_time_text(item)).classes("file-cell muted")
+        ui.button("详情", on_click=lambda _e, n=node: _show_details(n)).props("flat dense")
 
     if is_dir and is_expanded:
-        children = item.get("children", [])
-        if not children:
+        if not node.children:
             ui.label("空文件夹").classes("tree-note").style(f"padding-left: {depth * 22 + 46}px")
             return
-        for child in children:
-            _render_tree_node(child, expanded, refresh, depth=depth + 1)
-
-
-def _tree_entries_to_nodes(root_name: str, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    root: dict[str, Any] = {"children": {}}
-    for entry in entries:
-        parts = str(entry["relative_path"]).split("/")
-        current = root["children"]
-        current_path = root_name
-        for part in parts[:-1]:
-            current_path = f"{current_path}/{part}"
-            node = current.setdefault(
-                part,
-                {
-                    "name": part,
-                    "path": current_path,
-                    "is_dir": True,
-                    "size": 0,
-                    "children": {},
-                },
+        for child in node.children:
+            _render_tree_node(
+                child,
+                selected=selected,
+                expanded=expanded,
+                nodes_by_key=nodes_by_key,
+                parent_by_key=parent_by_key,
+                ensure_children=ensure_children,
+                render_tree=render_tree,
+                update_selection_summary=update_selection_summary,
+                depth=depth + 1,
             )
-            node["size"] += int(entry.get("size", 0))
-            current = node["children"]
-        filename = parts[-1]
-        current[filename] = {
-            "name": filename,
-            "path": str(entry["relative_path"]),
-            "is_dir": False,
-            "size": int(entry.get("size", 0)),
-            "children": {},
-        }
-    return [_finalize_tree_node(node) for node in root["children"].values()]
-
-
-def _finalize_tree_node(node: dict[str, Any]) -> dict[str, Any]:
-    children = node.get("children", {})
-    node["children"] = [_finalize_tree_node(child) for child in children.values()]
-    return node
-
-
-def _node_key(item: dict[str, Any]) -> str:
-    return str(item.get("id") or item.get("path") or item["name"])
-
-
-def _toggle_selected(
-    selected: dict[str, bool],
-    file_id: str,
-    update_selection_summary: Any,
-    button: Any,
-) -> None:
-    selected[file_id] = not selected.get(file_id, False)
-    button.text = "取消选择" if selected[file_id] else "选择下载"
-    update_selection_summary()
 
 
 def _size_text(item: dict[str, Any]) -> str:
     if "size_human" in item:
         return str(item["size_human"])
-    return f"{int(item.get('size', 0))} B"
+    return format_size(int(item.get("size", 0)))
 
 
-def _location_text(item: dict[str, Any], parent_name: str | None) -> str:
-    if "path" in item:
-        return str(item["path"])
-    return parent_name or "-"
+def _location_text(node: FileTreeNode) -> str:
+    if node.relative_path:
+        return node.relative_path
+    raw = node.raw or {}
+    return str(raw.get("path") or node.name)
 
 
 def _time_text(item: dict[str, Any]) -> str:
     return str(item.get("uploaded_at") or item.get("status") or "-")
 
 
-def _show_details(item: dict[str, Any]) -> None:
+def _show_details(node: FileTreeNode) -> None:
+    item = node.raw or {"name": node.name, "is_dir": node.is_dir}
     details = [
-        ("名称", item["name"]),
-        ("类型", "文件夹" if item["is_dir"] else "文件"),
+        ("名称", node.name),
+        ("类型", "文件夹" if node.is_dir else "文件"),
         ("大小", _size_text(item)),
-        ("位置", item.get("path", "-")),
+        ("位置", _location_text(node)),
         ("时间", _time_text(item)),
     ]
     if "id" in item:
@@ -438,20 +423,6 @@ def _show_details(item: dict[str, Any]) -> None:
                 ui.label(str(value)).classes("text-sm break-all")
         ui.button("关闭", on_click=dlg.close).props("flat")
     dlg.open()
-
-
-def _browser_download_url(item: dict[str, Any], *, token: str | None, pin: str | None) -> str:
-    query = {}
-    if token:
-        query["token"] = token
-    elif pin:
-        query["pin"] = pin
-
-    if item["is_dir"]:
-        return f"/api/download/{item['id']}/zip?{urlencode(query)}"
-
-    query["browser"] = "1"
-    return f"/api/download/{item['id']}?{urlencode(query)}"
 
 
 def _download_script(urls: list[str]) -> str:
