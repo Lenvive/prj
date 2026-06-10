@@ -14,9 +14,15 @@ from nicegui.events import ValueChangeEventArguments
 from pylocalsend.core.file_handler.file_handler import format_size
 from pylocalsend.core.transfer.server_entry import prepare_service
 from pylocalsend.core.utils.config import AppConfig
-from pylocalsend.core.utils.crypto import generate_pin
 from pylocalsend.core.utils.network import connect_host
 from pylocalsend.gui.facade import SenderFacade
+from pylocalsend.gui.sender.auth import (
+    ensure_gui_auth_config,
+    guard_sender_page,
+    gui_storage_secret,
+    print_startup_access_info,
+    sender_url_with_pin,
+)
 from pylocalsend.gui.file_tree import (
     FileTreeNode,
     apply_grants_to_selected,
@@ -92,36 +98,37 @@ STYLE = """
 
 def run_sender_gui() -> None:
     cfg = AppConfig.load()
-    if not cfg.server_pin and cfg.pin_verification_enabled:
-        cfg.server_pin = generate_pin()
-        cfg.save()
+    ensure_gui_auth_config(cfg)
     service = prepare_service(cfg)
     facade = SenderFacade()
     app = service.app
 
     @ui.page("/")
     def sender_home() -> None:
-        ui.add_head_html(STYLE)
-        with ui.column().classes("w-full max-w-[1420px] mx-auto p-8 gap-6"):
-            ui.label("PyLocalSend").classes("page-title")
-            with ui.column().classes("gap-0"):
-                for label, url in facade.access_urls.labels():
-                    ui.label(f"{label} · {url}").classes("muted")
-                if facade.access_urls.public:
-                    ui.label("公网地址需路由器端口映射后才可从外网访问").classes("muted text-xs")
+        def build_home() -> None:
+            ui.add_head_html(STYLE)
+            with ui.column().classes("w-full max-w-[1420px] mx-auto p-8 gap-6"):
+                ui.label("PyLocalSend").classes("page-title")
+                with ui.column().classes("gap-0"):
+                    for label, url in facade.access_urls.labels():
+                        ui.label(f"{label} · {url}").classes("muted")
+                    if facade.access_urls.public:
+                        ui.label("公网地址需路由器端口映射后才可从外网访问").classes("muted text-xs")
 
-            with ui.tabs().classes("w-full") as tabs:
-                t_files = ui.tab("文件传输")
-                t_recv = ui.tab("接收端管理")
-                t_settings = ui.tab("设置")
+                with ui.tabs().classes("w-full") as tabs:
+                    t_files = ui.tab("文件传输")
+                    t_recv = ui.tab("接收端管理")
+                    t_settings = ui.tab("设置")
 
-            with ui.tab_panels(tabs, value=t_files).classes("w-full"):
-                with ui.tab_panel(t_files):
-                    _files_tab(facade)
-                with ui.tab_panel(t_recv):
-                    _receivers_tab(facade)
-                with ui.tab_panel(t_settings):
-                    _settings_tab(facade)
+                with ui.tab_panels(tabs, value=t_files).classes("w-full"):
+                    with ui.tab_panel(t_files):
+                        _files_tab(facade)
+                    with ui.tab_panel(t_recv):
+                        _receivers_tab(facade)
+                    with ui.tab_panel(t_settings):
+                        _settings_tab(facade)
+
+        guard_sender_page(facade.service.config, STYLE, build_home)
 
     @ui.page("/r/{token}")
     def receiver_by_token(token: str) -> None:
@@ -129,10 +136,18 @@ def run_sender_gui() -> None:
 
         build_receiver_page(token=token)
 
-    ui.run_with(app, title="PyLocalSend")
+    print_startup_access_info(cfg, service.access_urls)
+
+    ui.run_with(
+        app,
+        title="PyLocalSend",
+        storage_secret=gui_storage_secret(cfg),
+        show_welcome_message=False,
+    )
 
     host = cfg.host if cfg.host != "0.0.0.0" else "0.0.0.0"
-    webbrowser.open(f"http://{connect_host(cfg.host)}:{cfg.port}/")
+    local_base = f"http://{connect_host(cfg.host)}:{cfg.port}"
+    webbrowser.open(sender_url_with_pin(local_base, cfg.server_pin))
     uvicorn.run(app, host=host, port=cfg.port, log_level="warning")
 
 
