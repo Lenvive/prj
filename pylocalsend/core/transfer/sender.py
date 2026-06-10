@@ -11,6 +11,7 @@ import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -28,6 +29,21 @@ from pylocalsend.core.file_handler.file_handler import (
 from pylocalsend.core.file_handler.streaming import async_read_chunks, parse_range_header
 from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.crypto import StreamCipher, derive_key
+
+
+def _attachment_content_disposition(filename: str) -> str:
+    """Build a latin-1-safe Content-Disposition header for arbitrary filenames."""
+    escaped = filename.replace("\\", "\\\\").replace('"', '\\"')
+    try:
+        escaped.encode("latin-1")
+        return f'attachment; filename="{escaped}"'
+    except UnicodeEncodeError:
+        ascii_fallback = (
+            filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
+        )
+        ascii_fallback = ascii_fallback.replace("\\", "\\\\").replace('"', '\\"')
+        encoded = quote(filename, safe="")
+        return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 from pylocalsend.core.utils.db import Database
 from pylocalsend.core.utils.logger import get_logger
 from pylocalsend.core.utils.network import AccessUrls, get_access_urls
@@ -344,7 +360,7 @@ class SenderService:
 
             headers = {
                 "Accept-Ranges": "bytes",
-                "Content-Disposition": f'attachment; filename="{file_path.name}"',
+                "Content-Disposition": _attachment_content_disposition(file_path.name),
                 "X-Encrypted": "1" if cipher else "0",
             }
             if request.headers.get("range"):
@@ -420,7 +436,9 @@ class SenderService:
                     )
 
             headers = {
-                "Content-Disposition": f'attachment; filename="{record["name"]}.zip"',
+                "Content-Disposition": _attachment_content_disposition(
+                    f'{record["name"]}.zip'
+                ),
                 "X-Encrypted": "0",
             }
             return StreamingResponse(

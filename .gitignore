@@ -11,3 +11,4 @@ tests/data/
 *.pylocalsend/
 dist/
 build/
+.nicegui/

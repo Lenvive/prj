@@ -501,11 +501,11 @@ section.end .sub {
 pylocalsend upload D:\data\file.zip D:\photos
 
 pylocalsend ls-remote `
-  -H http://192.168.1.100:8765 --pin 123456
+-H http://192.168.1.100:8765 --pin 123456
 
-pylocalsend download file.zip `
-  -d D:\downloads `
-  -H http://192.168.1.100:8765 --pin 123456</code></pre>
+pylocalsend download file.zip `  -d D:\downloads`
+-H http://192.168.1.100:8765 --pin 123456</code></pre>
+
   </div>
 </div>
 
@@ -833,4 +833,3 @@ pytest tests -v</code></pre>
 # Q&A
 
 <div class="sub">谢谢观看</div>
-
