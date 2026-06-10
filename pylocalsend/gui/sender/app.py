@@ -583,26 +583,10 @@ def _copy_to_clipboard(text: str) -> None:
 
 def _settings_tab(facade: SenderFacade) -> None:
     cfg = facade.get_config()
-    fields = {}
-
-    for key in ("chunk_size", "max_parallel", "encryption_enabled", "pin_verification_enabled", "server_pin"):
-        val = cfg[key]
-        if isinstance(val, bool):
-            fields[key] = ui.switch(key.replace("_", " "), value=val)
-        else:
-            fields[key] = ui.input(key.replace("_", " "), value=str(val)).props("outlined dense")
+    chunk_input = ui.input("分片大小（字节）", value=str(cfg["chunk_size"])).props("outlined dense")
 
     def save() -> None:
-        updates = {}
-        for key, widget in fields.items():
-            v = widget.value
-            if isinstance(cfg[key], bool):
-                updates[key] = bool(v)
-            elif isinstance(cfg[key], int):
-                updates[key] = int(v)
-            else:
-                updates[key] = str(v)
-        facade.update_config(updates)
+        facade.update_config({"chunk_size": int(chunk_input.value)})
         ui.notify("已保存", type="positive")
 
     ui.button("保存设置", on_click=save).props("unelevated")
