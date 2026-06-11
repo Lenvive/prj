@@ -1,0 +1,154 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="title desc">
+  <title id="title">传统方案：文件传输流程</title>
+  <desc id="desc">发送端选择文件，将文件复制到内存，再通过网络传输到接收端。</desc>
+
+  <defs>
+    <style>
+      .title {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 22px;
+        font-weight: 300;
+        letter-spacing: 0.18em;
+        fill: #222222;
+      }
+      .sub {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 12px;
+        font-weight: 300;
+        letter-spacing: 0.12em;
+        fill: #8a8a8a;
+      }
+      .label {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 13px;
+        font-weight: 300;
+        letter-spacing: 0.1em;
+        fill: #343434;
+      }
+      .note {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 11px;
+        font-weight: 300;
+        letter-spacing: 0.08em;
+        fill: #9a9a9a;
+      }
+      .hairline {
+        stroke: #d8d4cf;
+        stroke-width: 1;
+        fill: none;
+      }
+      .soft {
+        stroke: #ebe7e1;
+        stroke-width: 1;
+        fill: none;
+      }
+      .accent {
+        fill: #d63f32;
+      }
+      .accent-stroke {
+        stroke: #d63f32;
+        stroke-width: 1.4;
+        fill: none;
+      }
+    </style>
+
+    <filter id="paperNoise" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.018"/>
+      </feComponentTransfer>
+    </filter>
+
+    <marker id="quietArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="#c5c0b8" stroke-width="1"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="420" fill="#fbfaf7"/>
+  <rect width="960" height="420" filter="url(#paperNoise)" opacity="0.55"/>
+
+  <text x="480" y="62" text-anchor="middle" class="title">传统文件传输</text>
+  <text x="480" y="88" text-anchor="middle" class="sub">select · copy to memory · send · receive</text>
+
+  <line x1="118" y1="214" x2="842" y2="214" class="hairline" marker-end="url(#quietArrow)"/>
+  <line x1="118" y1="214" x2="842" y2="214" stroke="#d8d4cf" stroke-width="1" stroke-dasharray="1 12" opacity="0.8">
+    <animate attributeName="stroke-dashoffset" from="0" to="-13" dur="3.6s" repeatCount="indefinite"/>
+  </line>
+
+  <!-- 01 发送端：文件被选择 -->
+  <g transform="translate(150 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-17 16 H10 L26 32 V76 H-17 Z" fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <path d="M10 16 V32 H26" fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <line x1="-5" y1="44" x2="14" y2="44" class="soft"/>
+    <line x1="-5" y1="55" x2="17" y2="55" class="soft"/>
+    <line x1="-5" y1="66" x2="9" y2="66" class="soft"/>
+    <circle cx="26" cy="22" r="4" class="accent">
+      <animate attributeName="r" values="3;6;3" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <text x="0" y="118" text-anchor="middle" class="label">选择文件</text>
+    <text x="0" y="140" text-anchor="middle" class="note">发送端</text>
+  </g>
+
+  <!-- 02 内存：整文件被复制并占用空间 -->
+  <g transform="translate(380 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <circle cx="0" cy="46" r="36" class="soft"/>
+    <circle cx="0" cy="46" r="36" stroke="#d63f32" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-dasharray="0 226">
+      <animate attributeName="stroke-dasharray" values="0 226;226 0;226 0;0 226" keyTimes="0;0.12;0.32;1" dur="10s" repeatCount="indefinite"/>
+    </circle>
+    <text x="0" y="51" text-anchor="middle" class="sub" fill="#68635e">RAM</text>
+    <text x="0" y="118" text-anchor="middle" class="label">复制到内存</text>
+    <text x="0" y="140" text-anchor="middle" class="note">完整副本</text>
+  </g>
+
+  <!-- 03 网络：数据从内存离开 -->
+  <g transform="translate(610 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-35 50 C-20 26 20 26 35 50" class="soft"/>
+    <path d="M-25 57 C-12 39 12 39 25 57" class="soft"/>
+    <path d="M-13 64 C-6 55 6 55 13 64" class="soft"/>
+    <circle cx="0" cy="70" r="3" class="accent">
+      <animate attributeName="opacity" values="0.2;1;0.2" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <text x="0" y="118" text-anchor="middle" class="label">网络传输</text>
+    <text x="0" y="140" text-anchor="middle" class="note">从内存发送</text>
+  </g>
+
+  <!-- 04 接收端：写入本地 -->
+  <g transform="translate(810 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-26 28 H26 V70 H-26 Z" fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <path d="M-15 42 H15 M-15 53 H15" class="soft"/>
+    <path d="M-11 58 L-2 67 L17 43" class="accent-stroke" stroke-linecap="round" stroke-linejoin="round" opacity="0">
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.48;0.56;0.72;1" dur="10s" repeatCount="indefinite"/>
+    </path>
+    <text x="0" y="118" text-anchor="middle" class="label">接收端</text>
+    <text x="0" y="140" text-anchor="middle" class="note">写入本地</text>
+  </g>
+
+  <!-- 数据点：到达内存后停留 2s，再继续传递 -->
+  <circle r="5" class="accent">
+    <animateMotion path="M150,214 L380,214 L610,214 L810,214" dur="10s" repeatCount="indefinite"
+                   keyPoints="0;0.3485;0.3485;0.697;1;1"
+                   keyTimes="0;0.12;0.32;0.44;0.56;1" calcMode="linear"/>
+    <animate attributeName="r" values="4;5;7;7;5;4" keyTimes="0;0.12;0.16;0.32;0.56;1" dur="10s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- 内存节点的红色停留强调（与 2s 停留同步） -->
+  <circle cx="380" cy="214" r="42" fill="none" stroke="#d63f32" stroke-width="1" opacity="0">
+    <animate attributeName="opacity" values="0;0;0.85;0.85;0.2;0" keyTimes="0;0.1;0.14;0.28;0.32;0.56" dur="10s" repeatCount="indefinite"/>
+    <animate attributeName="r" values="34;34;50;50;58;58" keyTimes="0;0.1;0.14;0.28;0.32;0.56" dur="10s" repeatCount="indefinite"/>
+  </circle>
+
+  <g transform="translate(184 352)">
+    <line x1="0" y1="0" x2="592" y2="0" class="hairline"/>
+    <text x="100" y="28" class="note">传统路径并不直接把文件送到接收端，而是先在发送端内存中形成完整中转。</text>
+    <text x="200" y="50" class="note">大文件越大，等待与内存峰值越明显。</text>
+    <circle cx="606" cy="-1" r="3" class="accent"/>
+  </g>
+</svg>

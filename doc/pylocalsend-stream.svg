@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="title desc">
+  <title id="title">PyLocalSend &#26041;&#26696;&#65306;&#27969;&#24335;&#25991;&#20214;&#20256;&#36755;</title>
+  <desc id="desc">&#21457;&#36865;&#31471;&#21482;&#30331;&#35760;&#25991;&#20214;&#36335;&#24452;&#65292;&#20256;&#36755;&#26102;&#25353;&#22359;&#35835;&#21462;&#65292;&#30452;&#25509;&#36890;&#36807;&#32593;&#32476;&#27969;&#24335;&#21457;&#36865;&#21040;&#25509;&#25910;&#31471;&#65292;&#19981;&#38656;&#35201;&#20808;&#23558;&#25972;&#20010;&#25991;&#20214;&#22797;&#21046;&#21040;&#20869;&#23384;&#12290;</desc>
+
+  <defs>
+    <style>
+      .title {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 22px;
+        font-weight: 300;
+        letter-spacing: 0.16em;
+        fill: #222222;
+      }
+      .sub {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 12px;
+        font-weight: 300;
+        letter-spacing: 0.12em;
+        fill: #8a8a8a;
+      }
+      .label {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 13px;
+        font-weight: 300;
+        letter-spacing: 0.1em;
+        fill: #343434;
+      }
+      .note {
+        font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+        font-size: 11px;
+        font-weight: 300;
+        letter-spacing: 0.08em;
+        fill: #9a9a9a;
+      }
+      .hairline {
+        stroke: #d8d4cf;
+        stroke-width: 1;
+        fill: none;
+      }
+      .soft {
+        stroke: #ebe7e1;
+        stroke-width: 1;
+        fill: none;
+      }
+      .accent {
+        fill: #2f8f83;
+      }
+      .accent-stroke {
+        stroke: #2f8f83;
+        stroke-width: 1.4;
+        fill: none;
+      }
+      .muted-stroke {
+        stroke: #c5c0b8;
+        stroke-width: 1;
+        fill: none;
+      }
+    </style>
+
+    <filter id="paperNoise" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.018"/>
+      </feComponentTransfer>
+    </filter>
+
+    <marker id="quietArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="#c5c0b8" stroke-width="1"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="420" fill="#fbfaf7"/>
+  <rect width="960" height="420" filter="url(#paperNoise)" opacity="0.55"/>
+
+  <text x="480" y="62" text-anchor="middle" class="title">PyLocalSend &#27969;&#24335;&#20256;&#36755;</text>
+  <text x="480" y="88" text-anchor="middle" class="sub">path only / chunk read / stream / save</text>
+
+  <path d="M118 214 H842" class="hairline" marker-end="url(#quietArrow)"/>
+  <path d="M118 214 H842" stroke="#d8d4cf" stroke-width="1" stroke-dasharray="1 12" opacity="0.8">
+    <animate attributeName="stroke-dashoffset" from="0" to="-13" dur="3.6s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- 01 sender registers a local path -->
+  <g transform="translate(150 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-28 60 H26 C33 60 38 55 38 48 V35 C38 28 33 23 26 23 H4 L-4 15 H-28 C-35 15 -40 20 -40 27 V48 C-40 55 -35 60 -28 60 Z"
+          fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <path d="M-28 34 H28" class="soft"/>
+    <circle cx="29" cy="22" r="4" class="accent">
+      <animate attributeName="r" values="3;5.5;3" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <text x="0" y="118" text-anchor="middle" class="label">&#30331;&#35760;&#36335;&#24452;</text>
+    <text x="0" y="140" text-anchor="middle" class="note">&#19981;&#22797;&#21046;&#25991;&#20214;</text>
+  </g>
+
+  <!-- 02 chunk reader: read small slices from disk -->
+  <g transform="translate(380 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-34 28 H34 V67 H-34 Z" fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <line x1="-24" y1="39" x2="24" y2="39" class="soft"/>
+    <line x1="-24" y1="49" x2="24" y2="49" class="soft"/>
+    <line x1="-24" y1="59" x2="24" y2="59" class="soft"/>
+    <rect x="-24" y="35" width="48" height="8" rx="4" fill="#2f8f83" opacity="0.18">
+      <animate attributeName="y" values="35;45;55;35" keyTimes="0;0.4;0.8;1" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.12;0.38;0.18;0.12" dur="2.4s" repeatCount="indefinite"/>
+    </rect>
+    <text x="0" y="118" text-anchor="middle" class="label">&#20998;&#22359;&#35835;&#21462;</text>
+    <text x="0" y="140" text-anchor="middle" class="note">&#36793;&#35835;&#36793;&#21457;</text>
+  </g>
+
+  <!-- 03 streaming network -->
+  <g transform="translate(610 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-35 50 C-20 26 20 26 35 50" class="soft"/>
+    <path d="M-25 57 C-12 39 12 39 25 57" class="soft"/>
+    <path d="M-13 64 C-6 55 6 55 13 64" class="soft"/>
+    <path d="M-28 72 C-10 82 10 82 28 72" class="accent-stroke" stroke-linecap="round">
+      <animate attributeName="opacity" values="0.18;0.9;0.18" dur="1.8s" repeatCount="indefinite"/>
+    </path>
+    <text x="0" y="118" text-anchor="middle" class="label">&#27969;&#24335;&#21457;&#36865;</text>
+    <text x="0" y="140" text-anchor="middle" class="note">HTTP stream</text>
+  </g>
+
+  <!-- 04 receiver writes chunks to local file -->
+  <g transform="translate(810 168)">
+    <circle cx="0" cy="46" r="58" fill="#fbfaf7" stroke="#ded9d1" stroke-width="1"/>
+    <path d="M-26 28 H26 V70 H-26 Z" fill="none" stroke="#5e5a55" stroke-width="1.2"/>
+    <path d="M-15 42 H15 M-15 53 H15" class="soft"/>
+    <path d="M-16 64 H16" class="accent-stroke" stroke-linecap="round">
+      <animate attributeName="stroke-dasharray" values="0 32;32 0;32 0" keyTimes="0;0.65;1" dur="2.4s" repeatCount="indefinite"/>
+    </path>
+    <text x="0" y="118" text-anchor="middle" class="label">&#25509;&#25910;&#20445;&#23384;</text>
+    <text x="0" y="140" text-anchor="middle" class="note">&#36880;&#22359;&#20889;&#20837;</text>
+  </g>
+
+  <!-- Stream chunks move continuously instead of waiting for a full memory copy. -->
+  <circle r="4" class="accent">
+    <animateMotion path="M150,214 L380,214 L610,214 L810,214" dur="2.8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.88;1" dur="2.8s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="4" class="accent" opacity="0">
+    <animateMotion path="M150,214 L380,214 L610,214 L810,214" dur="2.8s" begin="0.55s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.88;1" dur="2.8s" begin="0.55s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="4" class="accent" opacity="0">
+    <animateMotion path="M150,214 L380,214 L610,214 L810,214" dur="2.8s" begin="1.1s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.88;1" dur="2.8s" begin="1.1s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="4" class="accent" opacity="0">
+    <animateMotion path="M150,214 L380,214 L610,214 L810,214" dur="2.8s" begin="1.65s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.88;1" dur="2.8s" begin="1.65s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Memory is present but not used as a full-file staging area. -->
+  <g transform="translate(480 310)" opacity="0.95">
+    <circle cx="0" cy="0" r="22" class="muted-stroke"/>
+    <line x1="-14" y1="14" x2="14" y2="-14" stroke="#c5c0b8" stroke-width="1"/>
+    <text x="0" y="4" text-anchor="middle" class="sub" fill="#a8a29a">RAM</text>
+    <text x="0" y="36" text-anchor="middle" class="note">&#19981;&#24418;&#25104;&#25972;&#25991;&#20214;&#21103;&#26412;</text>
+  </g>
+
+  <g transform="translate(184 352)">
+    <line x1="0" y1="0" x2="592" y2="0" class="hairline"/>
+    <text x="0" y="28" class="note">PyLocalSend &#21482;&#30331;&#35760;&#25991;&#20214;&#36335;&#24452;&#65307;&#20256;&#36755;&#26102;&#20174;&#30913;&#30424;&#25353;&#22359;&#35835;&#21462;&#65292;&#38543;&#35835;&#38543;&#21457;&#12290;</text>
+    <text x="0" y="50" class="note">&#25991;&#20214;&#19981;&#38656;&#35201;&#20808;&#34987;&#22797;&#21046;&#21040;&#20869;&#23384;&#20013;&#65292;&#26356;&#36866;&#21512;&#22823;&#25991;&#20214;&#21644;&#20020;&#26102;&#20849;&#20139;&#12290;</text>
+    <circle cx="606" cy="-1" r="3" class="accent"/>
+  </g>
+</svg>

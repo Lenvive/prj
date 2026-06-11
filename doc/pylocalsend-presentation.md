@@ -397,7 +397,7 @@ section.end .sub {
 
 # PyLocalSend
 
-<div class="sub">一个面向局域网的文件传输工具。发送端登记路径，接收端通过 CLI 或浏览器下载。</div>
+<div class="sub">一个面向局域网的文件传输工具。发送端登记路径，接收端通过 CLI 或浏览器下载；也可按需允许接收端反向上传。</div>
 
 <div style="position:absolute; left:104px; bottom:76px;" class="small">Python · FastAPI · NiceGUI · Streaming</div>
 
@@ -429,13 +429,25 @@ section.end .sub {
   <div class="panel">
     <span class="number">03</span>
     <h3>聊天软件</h3>
-    <p>大文件限制多，目录结构不友好，不适合课堂分发。</p>
+    <p>大文件限制多，目录结构不友好。</p>
   </div>
 </div>
 
 <div class="quote" style="margin-top:64px;">
-  <p>PyLocalSend 试图把“传文件”还原成一个清洁的局域网动作。</p>
+  <p>PyLocalSend 试图把“传文件”变简单。</p>
 </div>
+
+---
+
+## &#20256;&#32479;&#26041;&#26696;&#65306;&#20808;&#22797;&#21046;&#21040;&#20869;&#23384;
+
+<img src="./%E4%BC%A0%E7%BB%9F%E6%96%B9%E6%A1%88.svg" style="display:block; width:1040px; margin:24px auto 0;" alt="传统方案文件传输流程">
+
+---
+
+## PyLocalSend &#26041;&#26696;&#65306;&#36793;&#35835;&#36793;&#21457;
+
+<img src="./pylocalsend-stream.svg" style="display:block; width:1040px; margin:24px auto 0;" alt="PyLocalSend 流式文件传输流程">
 
 ---
 
@@ -447,7 +459,7 @@ section.end .sub {
     <p class="sub">不引入复杂账号系统，不依赖公网服务，不提前复制文件。</p>
   </div>
   <div class="line-list">
-    <div class="line-item"><b>0 安装</b><span>接收端 WebUI 打开链接即可下载。</span></div>
+    <div class="line-item"><b>接收端零安装</b><span>WebUI 打开链接即可下载。</span></div>
     <div class="line-item"><b>1 服务</b><span>发送端启动本地 HTTP 服务。</span></div>
     <div class="line-item"><b>N 接收</b><span>多个接收端通过 PIN 或 token 访问。</span></div>
   </div>
@@ -469,14 +481,14 @@ section.end .sub {
 
 <div class="split">
   <div>
-    <h2>管理，不搬运。</h2>
+    <h2>只管理共享路径，不复制文件。</h2>
     <p class="sub">发送端只登记本地文件或文件夹路径，界面负责展示和管理。</p>
   </div>
   <div class="line-list">
     <div class="line-item"><b>文件</b><span>注册、查看、删除共享路径；勾选控制开放范围。</span></div>
-    <div class="line-item"><b>接收端</b><span>创建 token 链接；禁用/启用；复制给指定接收端。</span></div>
+    <div class="line-item"><b>接收端</b><span>创建 token 链接；允许/禁止浏览器上传；禁用/启用。</span></div>
     <div class="line-item"><b>记录</b><span>查看下载者、时间、状态和传输量。</span></div>
-    <div class="line-item"><b>设置</b><span>端口、分片大小、并行数、PIN、加密。</span></div>
+    <div class="line-item"><b>设置</b><span>分片大小、浏览器上传存放路径；亦可改端口、PIN、加密等。</span></div>
   </div>
 </div>
 
@@ -532,6 +544,29 @@ pylocalsend download file.zip `  -d D:\downloads`
 
 ---
 
+## 接收端浏览器上传
+
+<div class="columns">
+  <div class="panel">
+    <span class="number">C</span>
+    <h3>权限开关</h3>
+    <p>发送端在「接收端管理」中按接收端单独<strong>允许上传</strong>或<strong>禁止上传</strong>；默认禁止。</p>
+  </div>
+  <div class="panel">
+    <span class="number">D</span>
+    <h3>上传标签页</h3>
+    <p>被允许的接收端打开 `/r/&lt;token&gt;` 后，页面出现<strong>「上传文件」</strong>标签，使用 NiceGUI 上传组件，支持多文件自动上传。</p>
+  </div>
+</div>
+
+<div class="columns three" style="margin-top:36px;">
+  <div class="panel"><h3>存放路径</h3><p><code>{upload_dir}/{接收端名称}/</code>；<code>upload_dir</code> 可在设置中配置。</p></div>
+  <div class="panel"><h3>默认目录</h3><p>留空时使用 <code>~/.pylocalsend/browser_uploads</code>。</p></div>
+  <div class="panel"><h3>同名处理</h3><p>目标文件已存在时自动追加时间戳，避免覆盖。</p></div>
+</div>
+
+---
+
 ## 下载开放与接收端控制
 
 <div class="columns">
@@ -543,13 +578,13 @@ pylocalsend download file.zip `  -d D:\downloads`
   <div class="panel">
     <span class="number">02</span>
     <h3>禁用接收端</h3>
-    <p>禁用后禁止新下载并中断进行中的传输；解除禁用后 token 链接恢复正常。</p>
+    <p>禁用后禁止新下载、新上传，并中断进行中的下载；解除禁用后 token 链接恢复正常。</p>
   </div>
 </div>
 
 <div class="columns three" style="margin-top:36px;">
+  <div class="panel"><h3>允许上传</h3><p>按接收端开启浏览器反向传文件到发送端电脑。</p></div>
   <div class="panel"><h3>全部开放</h3><p>一键开放所有已注册项。</p></div>
-  <div class="panel"><h3>全部关闭</h3><p>一键隐藏所有共享项。</p></div>
   <div class="panel"><h3>自动同步</h3><p>接收端每 2 秒检测 catalog-version 变化。</p></div>
 </div>
 
@@ -561,7 +596,7 @@ pylocalsend download file.zip `  -d D:\downloads`
 
 # 路径登记，按需读取，流式返回
 
-<div class="sub">这是整个项目最重要的设计。</div>
+<div class="sub">从“两次上传”变成“一次上传”</div>
 
 ---
 
@@ -580,7 +615,8 @@ pylocalsend download file.zip `  -d D:\downloads`
     HTTP<br>
     STREAM<br>
     PIN / TOKEN<br>
-    RANGE
+    RANGE<br>
+    UPLOAD*
   </div>
 
   <div class="machine">
@@ -608,7 +644,7 @@ pylocalsend download file.zip `  -d D:\downloads`
 <div class="columns three" style="margin-top:52px;">
   <div class="panel"><h3>不复制</h3><p>注册时只保存路径和元数据。</p></div>
   <div class="panel"><h3>不缓存</h3><p>下载时直接读取源文件。</p></div>
-  <div class="panel"><h3>不堆内存</h3><p>分片读写，适合大文件。</p></div>
+  <div class="panel"><h3>低内存占用</h3><p>分片读写，避免一次性加载大文件。</p></div>
 </div>
 
 ---
@@ -647,35 +683,13 @@ pylocalsend download file.zip `  -d D:\downloads`
 
 ## 访问控制与记录
 
-<div class="columns three">
-  <div class="panel">
-    <span class="number">PIN</span>
-    <h3>统一验证</h3>
-    <p>发送端配置 `server_pin`，CLI 和 API 请求都可使用。</p>
-  </div>
-  <div class="panel">
-    <span class="number">TOKEN</span>
-    <h3>接收端链接</h3>
-    <p>为每个接收端生成独立链接；可禁用/启用，便于临时管控。</p>
-  </div>
-  <div class="panel">
-    <span class="number">GRANT</span>
-    <h3>开放范围</h3>
-    <p>按路径粒度控制可见性；列表、树、下载和 ZIP 均受 grants 过滤。</p>
-  </div>
-</div>
-
-<div class="columns" style="margin-top:36px;">
-  <div class="panel">
-    <span class="number">LOG</span>
-    <h3>下载记录</h3>
-    <p>保存下载者、开始时间、状态和传输字节数。</p>
-  </div>
-  <div class="panel">
-    <span class="number">VER</span>
-    <h3>Catalog 版本</h3>
-    <p>共享文件与 grants 内容哈希；接收端 WebUI 轮询检测变更。</p>
-  </div>
+<div class="line-list">
+  <div class="line-item"><b>PIN</b><span>发送端统一 PIN，CLI 与 API 鉴权。</span></div>
+  <div class="line-item"><b>TOKEN</b><span>每接收端独立链接；可禁用/启用，临时管控下载与上传。</span></div>
+  <div class="line-item"><b>GRANT</b><span>按路径控制可见性；列表、树、下载、ZIP 均过滤。</span></div>
+  <div class="line-item"><b>UPLOAD</b><span>按接收端开关浏览器上传；<code>upload_dir</code> 配置存放根目录。</span></div>
+  <div class="line-item"><b>LOG</b><span>记录下载者、时间、状态与传输字节数。</span></div>
+  <div class="line-item"><b>VER</b><span>共享项与 grants 哈希为 catalog 版本；WebUI 轮询自动同步。</span></div>
 </div>
 
 ---
@@ -686,7 +700,7 @@ pylocalsend download file.zip `  -d D:\downloads`
 
 # 代码结构保持清晰
 
-<div class="sub">CLI 和 GUI 只是入口，核心能力沉到 `core` 层。</div>
+<div class="sub">CLI 和 GUI 只是入口，核心能力集中在 `core` 层。</div>
 
 ---
 
@@ -740,7 +754,8 @@ doc/</code></pre>
   <div class="line-list">
     <div class="line-item"><b>files</b><span>路径、名称、大小、类型、状态。</span></div>
     <div class="line-item"><b>download_grants</b><span>每个共享项的开放相对路径。</span></div>
-    <div class="line-item"><b>receivers</b><span>名称、PIN、token、状态（正常/已禁用）。</span></div>
+    <div class="line-item"><b>receivers</b><span>名称、PIN、token、状态、upload_allowed。</span></div>
+    <div class="line-item"><b>config</b><span>含 upload_dir：浏览器上传存放根目录。</span></div>
     <div class="line-item"><b>logs</b><span>下载者、时间、状态、字节数。</span></div>
   </div>
 </div>
@@ -755,8 +770,8 @@ doc/</code></pre>
     <p>参数解析、连接保存、配置读取、下载调用。</p>
   </div>
   <div class="panel">
-    <h3>服务端下载</h3>
-    <p>文件注册、鉴权、grants 过滤、禁用中断、浏览器下载、ZIP 流和日志。</p>
+    <h3>服务端下载与上传</h3>
+    <p>文件注册、鉴权、grants 过滤、禁用中断、浏览器下载、ZIP 流、浏览器上传权限与存放路径。</p>
   </div>
 </div>
 
@@ -791,6 +806,23 @@ pytest tests -v</code></pre>
 
 ---
 
+## 演示脚本：反向上传（可选）
+
+<div class="flow">
+  <div class="step"><b>01</b><span>设置中配置上传存放路径</span></div>
+  <div class="step"><b>02</b><span>对接收端点击「允许上传」</span></div>
+  <div class="step"><b>03</b><span>接收端打开「上传文件」标签页</span></div>
+  <div class="step"><b>04</b><span>选择文件上传至发送端磁盘</span></div>
+  <div class="step"><b>05</b><span>确认未自动进入共享列表</span></div>
+  <div class="step"><b>06</b><span>发送端手动注册路径并勾选开放</span></div>
+</div>
+
+<div class="quote" style="margin-top:48px;">
+  <p>适合课堂交作业、实验数据回传等「先收到本地，再决定是否共享」的场景。</p>
+</div>
+
+---
+
 ## 当前限制
 
 <div class="columns">
@@ -800,12 +832,23 @@ pytest tests -v</code></pre>
   </div>
   <div class="panel">
     <h3>网络边界</h3>
-    <p>公网访问需要端口映射；局域网 HTTP 默认不是 HTTPS。</p>
+    <p>当前默认面向可信局域网；直接公网访问需要额外配置和安全加固。</p>
   </div>
 </div>
 
-<div class="quote" style="margin-top:72px;">
-  <p>CLI 更适合复杂批量下载；WebUI 更适合零安装接收和课堂演示。</p>
+<div class="columns" style="margin-top:36px;">
+  <div class="panel">
+    <h3>上传不自动共享</h3>
+    <p>接收端上传后需发送端手动注册路径，才会出现在共享列表并开放下载。</p>
+  </div>
+  <div class="panel">
+    <h3>浏览器上传体积</h3>
+    <p>WebUI 上传经浏览器读入内存再写入磁盘，超大文件更适合 CLI 或本机路径注册。</p>
+  </div>
+</div>
+
+<div class="quote" style="margin-top:48px;">
+  <p>CLI 更适合复杂批量下载；WebUI 更适合零安装接收、反向上传和课堂演示。</p>
 </div>
 
 ---
@@ -816,7 +859,7 @@ pytest tests -v</code></pre>
 
 # PyLocalSend
 
-<div class="sub">发送端只登记路径，下载时流式读取。工具应该退到背景里，让文件自然抵达接收端。</div>
+<div class="sub">发送端只登记路径，下载时流式读取。尽量降低操作复杂度，让文件更直接地抵达接收端。</div>
 
 <div class="label-row" style="justify-content:center; margin-top:44px;">
   <span class="label">低成本</span>
@@ -824,6 +867,7 @@ pytest tests -v</code></pre>
   <span class="label">流式传输</span>
   <span class="label">可管理</span>
   <span class="label">细粒度开放</span>
+  <span class="label">反向上传</span>
 </div>
 
 ---

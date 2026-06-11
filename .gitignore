@@ -12,3 +12,4 @@ tests/data/
 dist/
 build/
 .nicegui/
+**/**/video/
