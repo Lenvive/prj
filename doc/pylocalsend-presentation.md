@@ -387,6 +387,13 @@ section.end .sub {
   margin-left: auto;
   margin-right: auto;
 }
+
+section.end .label-row {
+  width: 100%;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: auto;
+}
 </style>
 
 <!-- _class: cover -->
@@ -499,7 +506,7 @@ section.end .sub {
 <div class="split">
   <div>
     <h2>适合批量和精确下载。</h2>
-    <p class="sub">命令行可指定目标目录，支持并行、断点续传和加密流解密。</p>
+    <p class="sub">命令行可指定目标目录，支持并行下载和断点续传。</p>
     <div class="label-row">
       <span class="label">sender</span>
       <span class="label">upload</span>
@@ -762,64 +769,17 @@ doc/</code></pre>
 
 ---
 
-## 测试重点
-
-<div class="columns">
-  <div class="panel">
-    <h3>命令行行为</h3>
-    <p>参数解析、连接保存、配置读取、下载调用。</p>
-  </div>
-  <div class="panel">
-    <h3>服务端下载与上传</h3>
-    <p>文件注册、鉴权、grants 过滤、禁用中断、浏览器下载、ZIP 流、浏览器上传权限与存放路径。</p>
-  </div>
-</div>
-
-<div style="margin-top:54px; max-width:560px;">
-<pre><code>pip install -e ".[dev]"
-pytest tests -v</code></pre>
-</div>
-
----
-
 <!-- _class: chapter -->
 
 <div class="chapter-no">05 / DEMO</div>
 
-# 课堂演示路径
-
-<div class="sub">按真实使用流程展示，比逐个讲接口更直观。</div>
+# 课堂演示
 
 ---
 
-## 演示脚本
+## 演示视频
 
-<div class="flow">
-  <div class="step"><b>01</b><span>启动 `pylocalsend gui`</span></div>
-  <div class="step"><b>02</b><span>注册一个文件和一个文件夹</span></div>
-  <div class="step"><b>03</b><span>勾选部分子项开放下载</span></div>
-  <div class="step"><b>04</b><span>创建接收端 token 链接</span></div>
-  <div class="step"><b>05</b><span>浏览器打开链接，确认仅见开放项</span></div>
-  <div class="step"><b>06</b><span>发送端调整勾选，接收端自动同步</span></div>
-  <div class="step"><b>07</b><span>禁用接收端，验证下载被中断</span></div>
-</div>
-
----
-
-## 演示脚本：反向上传（可选）
-
-<div class="flow">
-  <div class="step"><b>01</b><span>设置中配置上传存放路径</span></div>
-  <div class="step"><b>02</b><span>对接收端点击「允许上传」</span></div>
-  <div class="step"><b>03</b><span>接收端打开「上传文件」标签页</span></div>
-  <div class="step"><b>04</b><span>选择文件上传至发送端磁盘</span></div>
-  <div class="step"><b>05</b><span>确认未自动进入共享列表</span></div>
-  <div class="step"><b>06</b><span>发送端手动注册路径并勾选开放</span></div>
-</div>
-
-<div class="quote" style="margin-top:48px;">
-  <p>适合课堂交作业、实验数据回传等「先收到本地，再决定是否共享」的场景。</p>
-</div>
+<video src="./video/demo.mp4" controls style="display:block; width:1040px; margin:24px auto 0; border:1px solid #e7e2d8; background:#fff;"></video>
 
 ---
 
@@ -842,7 +802,7 @@ pytest tests -v</code></pre>
     <p>接收端上传后需发送端手动注册路径，才会出现在共享列表并开放下载。</p>
   </div>
   <div class="panel">
-    <h3>浏览器上传体积</h3>
+    <h3>接收端上传体积</h3>
     <p>WebUI 上传经浏览器读入内存再写入磁盘，超大文件更适合 CLI 或本机路径注册。</p>
   </div>
 </div>
@@ -861,7 +821,7 @@ pytest tests -v</code></pre>
 
 <div class="sub">发送端只登记路径，下载时流式读取。尽量降低操作复杂度，让文件更直接地抵达接收端。</div>
 
-<div class="label-row" style="justify-content:center; margin-top:44px;">
+<div class="label-row" style="margin-top:44px;">
   <span class="label">低成本</span>
   <span class="label">局域网</span>
   <span class="label">流式传输</span>
@@ -872,8 +832,16 @@ pytest tests -v</code></pre>
 
 ---
 
+<div class="line-list" style="max-width:760px; margin:48px auto 0; text-align:left;">
+  <div class="line-item"><b>李子健</b><span>GUI 和 CLI 设计和实现，核心逻辑代码，视频剪辑</span></div>
+  <div class="line-item"><b>杨秉熹</b><span>核心逻辑代码，视频素材提供，PPT 制作</span></div>
+</div>
+
+---
+
 <!-- _class: end -->
 
 # Q&A
 
 <div class="sub">谢谢观看</div>
+
