@@ -52,6 +52,7 @@ class Database:
                     pin TEXT NOT NULL,
                     token TEXT NOT NULL UNIQUE,
                     status TEXT NOT NULL DEFAULT 'active',
+                    upload_allowed INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS download_logs (
@@ -90,6 +91,13 @@ class Database:
                 )
                 conn.execute(
                     "INSERT INTO schema_meta (key, value) VALUES ('grants_backfill', '1')"
+                )
+            receiver_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(receivers)").fetchall()
+            }
+            if "upload_allowed" not in receiver_cols:
+                conn.execute(
+                    "ALTER TABLE receivers ADD COLUMN upload_allowed INTEGER NOT NULL DEFAULT 0"
                 )
 
     def add_file(
@@ -176,6 +184,17 @@ class Database:
                 WHERE id = ? AND status = 'disabled'
                 """,
                 (receiver_id,),
+            )
+            return cur.rowcount > 0
+
+    def set_receiver_upload_allowed(self, receiver_id: str, allowed: bool) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE receivers SET upload_allowed = ?
+                WHERE id = ? AND status != 'removed'
+                """,
+                (int(allowed), receiver_id),
             )
             return cur.rowcount > 0
 

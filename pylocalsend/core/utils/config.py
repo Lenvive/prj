@@ -19,6 +19,7 @@ CONFIG_KEYS = {
     "encryption_enabled": "encryption_enabled",
     "pin_verification_enabled": "pin_verification_enabled",
     "server_pin": "server_pin",
+    "upload_dir": "upload_dir",
 }
 
 
@@ -31,6 +32,13 @@ class AppConfig:
     encryption_enabled: bool = True
     pin_verification_enabled: bool = True
     server_pin: str = ""
+    upload_dir: str = ""
+
+    def upload_base_dir(self) -> Path:
+        raw = self.upload_dir.strip()
+        if raw:
+            return Path(raw).expanduser().resolve()
+        return APP_DIR / "browser_uploads"
 
     @classmethod
     def load(cls) -> AppConfig:

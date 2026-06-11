@@ -66,6 +66,16 @@ class ReceiverClient:
             r.raise_for_status()
             return str(r.json()["version"])
 
+    async def upload_file(self, filename: str, data: bytes) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=None) as client:
+            r = await client.post(
+                f"{self.host}/api/files/browser-upload",
+                headers=self._headers,
+                files={"file": (filename, data)},
+            )
+            r.raise_for_status()
+            return r.json()
+
     async def download_items(
         self,
         names_or_ids: list[str],

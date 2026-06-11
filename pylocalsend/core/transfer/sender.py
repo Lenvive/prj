@@ -6,6 +6,7 @@ import asyncio
 import secrets
 import queue
 import threading
+import time
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -29,6 +30,14 @@ from pylocalsend.core.file_handler.file_handler import (
 from pylocalsend.core.file_handler.streaming import async_read_chunks, parse_range_header
 from pylocalsend.core.utils.config import AppConfig
 from pylocalsend.core.utils.crypto import StreamCipher, derive_key
+
+
+def _safe_dir_name(name: str) -> str:
+    cleaned = name.strip()
+    for ch in '\\/:*?"<>|':
+        cleaned = cleaned.replace(ch, "_")
+    cleaned = cleaned.rstrip(". ")
+    return cleaned or "receiver"
 
 
 def _attachment_content_disposition(filename: str) -> str:
@@ -119,6 +128,24 @@ class SenderService:
                 raise HTTPException(403, "Receiver is disabled")
         return effective_pin, receiver_id
 
+    def _auth_browser_upload(
+        self,
+        pin: str | None,
+        token: str | None,
+    ) -> tuple[str, str]:
+        """Authenticate receiver browser upload; requires token and upload permission."""
+        if not token:
+            raise HTTPException(403, "Receiver token required for upload")
+        effective_pin, receiver_id = self._auth(pin, token)
+        if not receiver_id:
+            raise HTTPException(403, "Receiver token required for upload")
+        receiver = self.db.get_receiver(receiver_id)
+        if not receiver or receiver["status"] != "active":
+            raise HTTPException(403, "Receiver is disabled")
+        if not receiver.get("upload_allowed"):
+            raise HTTPException(403, "Upload not allowed for this receiver")
+        return effective_pin, receiver_id
+
     def _register_download(self, log_id: int, receiver_id: str | None) -> threading.Event:
         cancel = threading.Event()
         self._download_cancel[log_id] = cancel
@@ -141,6 +168,36 @@ class SenderService:
 
     def enable_receiver(self, receiver_id: str) -> bool:
         return self.db.enable_receiver(receiver_id)
+
+    def allow_receiver_upload(self, receiver_id: str) -> bool:
+        return self.db.set_receiver_upload_allowed(receiver_id, True)
+
+    def disallow_receiver_upload(self, receiver_id: str) -> bool:
+        return self.db.set_receiver_upload_allowed(receiver_id, False)
+
+    def save_browser_upload(
+        self,
+        receiver_id: str,
+        filename: str,
+        data: bytes,
+    ) -> dict[str, Any]:
+        receiver = self.db.get_receiver(receiver_id)
+        if not receiver or receiver["status"] != "active":
+            raise HTTPException(403, "Receiver is disabled")
+        if not receiver.get("upload_allowed"):
+            raise HTTPException(403, "Upload not allowed for this receiver")
+
+        safe_name = Path(filename).name
+        if not safe_name:
+            raise HTTPException(400, "Invalid filename")
+
+        upload_dir = self.config.upload_base_dir() / _safe_dir_name(receiver["name"])
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        dest = upload_dir / safe_name
+        if dest.exists():
+            dest = upload_dir / f"{dest.stem}_{int(time.time())}{dest.suffix}"
+        dest.write_bytes(data)
+        return _browser_upload_to_api(dest)
 
     def get_download_grants(self, file_id: str) -> set[str]:
         return self.db.get_download_grants(file_id)
@@ -168,6 +225,12 @@ class SenderService:
             x_token: str | None = Header(default=None, alias="X-Token"),
         ) -> tuple[str, str | None]:
             return svc._auth(x_pin, x_token)
+
+        async def require_upload_auth(
+            x_pin: str | None = Header(default=None, alias="X-PIN"),
+            x_token: str | None = Header(default=None, alias="X-Token"),
+        ) -> tuple[str, str]:
+            return svc._auth_browser_upload(x_pin, x_token)
 
         @self.app.post("/api/shutdown")
         async def shutdown(
@@ -221,6 +284,21 @@ class SenderService:
                 except (FileNotFoundError, OSError) as e:
                     log.warning("Skip %s: %s", raw, e)
             return added
+
+        @self.app.post("/api/files/browser-upload")
+        async def browser_upload(
+            file: UploadFile = File(...),
+            auth: tuple[str, str] = Depends(require_upload_auth),
+        ) -> dict:
+            _pin, receiver_id = auth
+            data = await file.read()
+            if not data:
+                raise HTTPException(400, "Empty file")
+            return svc.save_browser_upload(
+                receiver_id,
+                file.filename or "upload.bin",
+                data,
+            )
 
         @self.app.delete("/api/files/{file_id}")
         async def delete_file(
@@ -494,6 +572,26 @@ class SenderService:
                 raise HTTPException(404, "Receiver not found or not disabled")
             return {"ok": True}
 
+        @self.app.post("/api/receivers/{receiver_id}/allow-upload")
+        async def allow_receiver_upload(
+            receiver_id: str,
+            auth: tuple[str, str | None] = Depends(require_auth),
+        ) -> dict:
+            if not svc.allow_receiver_upload(receiver_id):
+                raise HTTPException(404, "Receiver not found")
+            record = svc.db.get_receiver(receiver_id)
+            return _receiver_to_api(record, svc.base_url)
+
+        @self.app.post("/api/receivers/{receiver_id}/disallow-upload")
+        async def disallow_receiver_upload(
+            receiver_id: str,
+            auth: tuple[str, str | None] = Depends(require_auth),
+        ) -> dict:
+            if not svc.disallow_receiver_upload(receiver_id):
+                raise HTTPException(404, "Receiver not found")
+            record = svc.db.get_receiver(receiver_id)
+            return _receiver_to_api(record, svc.base_url)
+
         @self.app.get("/api/receivers/{receiver_id}/downloads")
         async def receiver_downloads(
             receiver_id: str,
@@ -559,6 +657,16 @@ class SenderService:
         }
 
 
+def _browser_upload_to_api(path: Path) -> dict[str, Any]:
+    st = path.stat()
+    return {
+        "name": path.name,
+        "path": str(path),
+        "size": st.st_size,
+        "size_human": format_size(st.st_size),
+    }
+
+
 def _file_to_api(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": record["id"],
@@ -584,6 +692,7 @@ def _receiver_to_api(record: dict[str, Any] | None, base_url: str) -> dict[str, 
         "token": record["token"],
         "link": link,
         "status": record["status"],
+        "upload_allowed": bool(record.get("upload_allowed")),
         "created_at": record["created_at"],
     }
 

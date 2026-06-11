@@ -155,3 +155,85 @@ def test_enable_receiver_restores_download(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert response.content == b"hello receiver"
+
+
+def test_receiver_browser_upload_when_allowed(tmp_path: Path) -> None:
+    svc = _service(tmp_path)
+    receiver = svc.create_receiver("uploader", "654321")
+    assert svc.allow_receiver_upload(receiver["id"]) is True
+    client = TestClient(svc.app)
+
+    response = client.post(
+        "/api/files/browser-upload",
+        headers={"X-Token": receiver["token"], "X-PIN": receiver["pin"]},
+        files={"file": ("note.txt", b"from browser", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "note.txt"
+    assert payload["size"] == 12
+    assert svc.db.list_files() == []
+    saved = Path(payload["path"])
+    assert saved.read_bytes() == b"from browser"
+    assert saved.parent.name == receiver["name"]
+
+
+def test_receiver_browser_upload_blocked_without_permission(tmp_path: Path) -> None:
+    svc = _service(tmp_path)
+    receiver = svc.create_receiver("uploader", "654321")
+    client = TestClient(svc.app)
+
+    response = client.post(
+        "/api/files/browser-upload",
+        headers={"X-Token": receiver["token"], "X-PIN": receiver["pin"]},
+        files={"file": ("note.txt", b"from browser", "text/plain")},
+    )
+
+    assert response.status_code == 403
+    assert svc.db.list_files() == []
+
+
+def test_receiver_browser_upload_uses_custom_upload_dir(tmp_path: Path) -> None:
+    custom_dir = tmp_path / "my_uploads"
+    cfg = AppConfig(
+        encryption_enabled=True,
+        pin_verification_enabled=True,
+        server_pin="123456",
+        chunk_size=4,
+        upload_dir=str(custom_dir),
+    )
+    svc = SenderService(cfg, Database(tmp_path / "pylocalsend.db"))
+    receiver = svc.create_receiver("uploader", "654321")
+    assert svc.allow_receiver_upload(receiver["id"]) is True
+    client = TestClient(svc.app)
+
+    response = client.post(
+        "/api/files/browser-upload",
+        headers={"X-Token": receiver["token"], "X-PIN": receiver["pin"]},
+        files={"file": ("note.txt", b"custom path", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    saved = Path(payload["path"])
+    assert saved == custom_dir / receiver["name"] / "note.txt"
+    assert saved.read_bytes() == b"custom path"
+    assert svc.db.list_files() == []
+
+
+def test_receiver_browser_upload_blocked_when_disabled(tmp_path: Path) -> None:
+    svc = _service(tmp_path)
+    receiver = svc.create_receiver("uploader", "654321")
+    assert svc.allow_receiver_upload(receiver["id"]) is True
+    assert svc.disable_receiver(receiver["id"]) is True
+    client = TestClient(svc.app)
+
+    response = client.post(
+        "/api/files/browser-upload",
+        headers={"X-Token": receiver["token"], "X-PIN": receiver["pin"]},
+        files={"file": ("note.txt", b"from browser", "text/plain")},
+    )
+
+    assert response.status_code == 403
+    assert svc.db.list_files() == []

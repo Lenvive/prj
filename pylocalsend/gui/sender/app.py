@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -13,7 +14,7 @@ from nicegui.events import ValueChangeEventArguments
 
 from pylocalsend.core.file_handler.file_handler import format_size
 from pylocalsend.core.transfer.server_entry import prepare_service
-from pylocalsend.core.utils.config import AppConfig
+from pylocalsend.core.utils.config import APP_DIR, AppConfig
 from pylocalsend.core.utils.network import connect_host
 from pylocalsend.gui.facade import SenderFacade
 from pylocalsend.gui.sender.auth import (
@@ -81,7 +82,7 @@ STYLE = """
     .tree-note { color: #aaa; font-size: 0.82rem; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
     .receiver-row {
         display: grid;
-        grid-template-columns: 160px minmax(360px, 1fr) 100px 100px minmax(320px, auto);
+        grid-template-columns: 160px minmax(300px, 1fr) 100px 90px 100px minmax(380px, auto);
         gap: 16px;
         align-items: center;
         box-sizing: border-box;
@@ -496,12 +497,17 @@ def _render_receiver_header() -> None:
         ui.label("名称").classes("file-cell")
         ui.label("链接").classes("file-cell")
         ui.label("状态").classes("file-cell")
+        ui.label("上传").classes("file-cell")
         ui.label("PIN").classes("file-cell")
         ui.label("操作").classes("file-cell")
 
 
 def _receiver_status_label(status: str) -> str:
     return {"active": "正常", "disabled": "已禁用"}.get(status, status)
+
+
+def _receiver_upload_label(upload_allowed: bool) -> str:
+    return "已允许" if upload_allowed else "未允许"
 
 
 def _render_receiver_row(
@@ -513,6 +519,7 @@ def _render_receiver_row(
         ui.label(str(receiver["name"])).classes("file-cell")
         ui.label(str(receiver["link"])).classes("file-cell muted")
         ui.label(_receiver_status_label(str(receiver["status"]))).classes("file-cell muted")
+        ui.label(_receiver_upload_label(bool(receiver.get("upload_allowed")))).classes("file-cell muted")
         ui.label(str(receiver["pin"])).classes("file-cell muted")
         with ui.row().classes("gap-1"):
             ui.button(
@@ -533,6 +540,20 @@ def _render_receiver_row(
                     "启用",
                     on_click=lambda _e, rid=receiver["id"]: _enable_receiver(facade, rid, refresh),
                 ).props("flat dense color=positive")
+            if receiver.get("upload_allowed"):
+                ui.button(
+                    "禁止上传",
+                    on_click=lambda _e, rid=receiver["id"]: _disallow_receiver_upload(
+                        facade, rid, refresh
+                    ),
+                ).props("flat dense")
+            else:
+                ui.button(
+                    "允许上传",
+                    on_click=lambda _e, rid=receiver["id"]: _allow_receiver_upload(
+                        facade, rid, refresh
+                    ),
+                ).props("flat dense color=primary")
             ui.button(
                 "删除",
                 on_click=lambda _e, rid=receiver["id"]: _remove_receiver(facade, rid, refresh),
@@ -548,6 +569,18 @@ def _disable_receiver(facade: SenderFacade, receiver_id: str, refresh: Any) -> N
 def _enable_receiver(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:
     facade.enable_receiver(receiver_id)
     ui.notify("已解除禁用，该接收端可继续下载", type="positive")
+    refresh()
+
+
+def _allow_receiver_upload(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:
+    facade.allow_receiver_upload(receiver_id)
+    ui.notify("已允许该接收端通过浏览器上传文件", type="positive")
+    refresh()
+
+
+def _disallow_receiver_upload(facade: SenderFacade, receiver_id: str, refresh: Any) -> None:
+    facade.disallow_receiver_upload(receiver_id)
+    ui.notify("已禁止该接收端通过浏览器上传文件", type="info")
     refresh()
 
 
@@ -598,10 +631,32 @@ def _copy_to_clipboard(text: str) -> None:
 
 def _settings_tab(facade: SenderFacade) -> None:
     cfg = facade.get_config()
-    chunk_input = ui.input("分片大小（字节）", value=str(cfg["chunk_size"])).props("outlined dense")
+    default_upload_dir = APP_DIR / "browser_uploads"
+    with ui.column().classes("w-full max-w-2xl gap-4"):
+        chunk_input = ui.input("分片大小（字节）", value=str(cfg["chunk_size"])).props(
+            "outlined dense"
+        )
+        upload_input = ui.input(
+            "浏览器上传存放路径",
+            value=str(cfg.get("upload_dir") or ""),
+            placeholder=str(default_upload_dir),
+        ).props("outlined dense").classes("w-full")
+        ui.label(
+            f"接收端通过浏览器上传的文件会保存到此目录（按接收端名称分子文件夹）。"
+            f"留空则使用默认路径：{default_upload_dir}"
+        ).classes("muted")
 
-    def save() -> None:
-        facade.update_config({"chunk_size": int(chunk_input.value)})
-        ui.notify("已保存", type="positive")
+        def save() -> None:
+            try:
+                updates: dict[str, Any] = {"chunk_size": int(chunk_input.value)}
+                raw_upload = upload_input.value.strip()
+                if raw_upload:
+                    upload_path = Path(raw_upload).expanduser()
+                    upload_path.mkdir(parents=True, exist_ok=True)
+                updates["upload_dir"] = raw_upload
+                facade.update_config(updates)
+                ui.notify("已保存", type="positive")
+            except Exception as ex:
+                ui.notify(f"保存失败：{ex}", type="negative")
 
-    ui.button("保存设置", on_click=save).props("unelevated")
+        ui.button("保存设置", on_click=save).props("unelevated")

@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from nicegui import ui
-from nicegui.events import ValueChangeEventArguments
+from nicegui.events import UploadEventArguments, ValueChangeEventArguments
 
 from pylocalsend.core.receiver.receiver import ReceiverClient
 from pylocalsend.core.transfer.server_entry import get_service
@@ -78,6 +78,14 @@ STYLE = """
         border-radius: 2px;
         background: #fff;
     }
+    .upload-panel {
+        width: min(1360px, 100%);
+        margin-inline: auto;
+        padding: 24px 16px;
+        border: 1px solid #e8e8e8;
+        border-radius: 2px;
+        background: #fff;
+    }
 </style>
 """
 
@@ -98,6 +106,7 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
             client = ReceiverClient(host, pin, token=token, max_parallel=cfg.max_parallel)
             ui.label(f"接收端 · {receiver['name']}").classes("page-title")
             receiver_disabled = receiver["status"] == "disabled"
+            upload_allowed = bool(receiver.get("upload_allowed"))
         else:
             if not host or not pin:
                 ui.label("需要 host 与 PIN").classes("text-negative")
@@ -105,11 +114,33 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
             client = ReceiverClient(host, pin, max_parallel=cfg.max_parallel)
             ui.label("接收端").classes("page-title")
             receiver_disabled = False
+            upload_allowed = False
 
         ui.label(f"Sender · {host}").classes("muted")
         if receiver_disabled:
-            ui.label("该接收端已被发送端禁用，无法下载文件。").classes("text-negative")
+            ui.label("该接收端已被发送端禁用，无法下载或上传文件。").classes("text-negative")
 
+        if upload_allowed:
+            with ui.tabs().classes("w-full") as tabs:
+                t_download = ui.tab("文件下载")
+                t_upload = ui.tab("上传文件")
+            with ui.tab_panels(tabs, value=t_download).classes("w-full"):
+                with ui.tab_panel(t_download):
+                    _build_download_tab(client, token=token, pin=pin, receiver_disabled=receiver_disabled)
+                with ui.tab_panel(t_upload):
+                    _build_upload_tab(client, receiver_disabled=receiver_disabled)
+        else:
+            _build_download_tab(client, token=token, pin=pin, receiver_disabled=receiver_disabled)
+
+
+def _build_download_tab(
+    client: ReceiverClient,
+    *,
+    token: str | None,
+    pin: str | None,
+    receiver_disabled: bool,
+) -> None:
+    with ui.column().classes("w-full gap-3"):
         file_list = ui.column().classes("w-full gap-3")
         selected: dict[str, bool] = {}
         expanded: set[str] = set()
@@ -300,6 +331,39 @@ def build_receiver_page(token: str | None = None, host: str | None = None, pin: 
             ui.label("等待下载任务...").classes("muted")
         ui.timer(0.1, load_files, once=True)
         ui.timer(2.0, poll_updates)
+
+
+def _build_upload_tab(client: ReceiverClient, *, receiver_disabled: bool) -> None:
+    with ui.column().classes("w-full gap-3"):
+        ui.label("选择文件上传到发送端电脑的存放目录。").classes("muted")
+
+        upload_log = ui.column().classes("w-full gap-1")
+
+        async def handle_upload(e: UploadEventArguments) -> None:
+            if receiver_disabled:
+                ui.notify("该接收端已被禁用", type="negative")
+                return
+            filename = e.file.name
+            try:
+                data = await e.file.read()
+                record = await client.upload_file(filename, data)
+                with upload_log:
+                    ui.label(
+                        f"已上传 · {record['name']} · {record.get('size_human', record['size'])}"
+                    ).classes("text-sm")
+                ui.notify(f"已上传 {record['name']}", type="positive")
+            except Exception as ex:
+                ui.notify(f"上传失败：{ex}", type="negative")
+
+        with ui.element("div").classes("upload-panel"):
+            upload_widget = ui.upload(
+                on_upload=handle_upload,
+                auto_upload=True,
+                multiple=True,
+                label="选择文件上传",
+            ).classes("w-full")
+            if receiver_disabled:
+                upload_widget.disable()
 
 
 def _render_file_header() -> None:
