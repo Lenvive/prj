@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 500" width="1120" height="500" role="img">
+  <title>文件下载数据流</title>
+  <defs>
+    <style>
+      .bg{fill:#fbfaf7}.box{fill:#fff;stroke:#ded8ce;stroke-width:1.2}.soft{fill:#f4f1eb}.title{font:300 26px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222;letter-spacing:.08em}
+      .num{font:400 22px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#b33a2e}.h{font:500 16px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222}
+      .t{font:300 13px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#555}.m{font:300 12px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#8a8a8a}
+      .line{stroke:#bdb7ae;stroke-width:1.3;fill:none}.accent{stroke:#b33a2e;stroke-width:2;fill:none}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="none" stroke="#b33a2e" stroke-width="1.7"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1120" height="500"/>
+  <text x="560" y="48" text-anchor="middle" class="title">下载数据流：从路径登记到流式返回</text>
+  <text x="560" y="76" text-anchor="middle" class="m">核心目标是让内存占用与 chunk size 相关，而不是与文件总大小线性相关</text>
+
+  <g transform="translate(58 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">01</text><text x="77" y="74" text-anchor="middle" class="h">登记路径</text>
+    <text x="77" y="104" text-anchor="middle" class="t">保存绝对路径</text><text x="77" y="126" text-anchor="middle" class="t">大小、mtime、类型</text><text x="77" y="154" text-anchor="middle" class="m">不复制文件内容</text>
+  </g>
+  <g transform="translate(238 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">02</text><text x="77" y="74" text-anchor="middle" class="h">开放过滤</text>
+    <text x="77" y="104" text-anchor="middle" class="t">download_grants</text><text x="77" y="126" text-anchor="middle" class="t">决定可见路径</text><text x="77" y="154" text-anchor="middle" class="m">列表和下载共用</text>
+  </g>
+  <g transform="translate(418 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">03</text><text x="77" y="74" text-anchor="middle" class="h">发起请求</text>
+    <text x="77" y="104" text-anchor="middle" class="t">X-PIN / X-Token</text><text x="77" y="126" text-anchor="middle" class="t">可带 Range 头</text><text x="77" y="154" text-anchor="middle" class="m">CLI 可断点续传</text>
+  </g>
+  <g transform="translate(598 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">04</text><text x="77" y="74" text-anchor="middle" class="h">分片读取</text>
+    <text x="77" y="104" text-anchor="middle" class="t">async_read_chunks</text><text x="77" y="126" text-anchor="middle" class="t">按偏移 seek</text><text x="77" y="154" text-anchor="middle" class="m">可选 AES-CTR</text>
+  </g>
+  <g transform="translate(778 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">05</text><text x="77" y="74" text-anchor="middle" class="h">流式响应</text>
+    <text x="77" y="104" text-anchor="middle" class="t">StreamingResponse</text><text x="77" y="126" text-anchor="middle" class="t">206 Partial Content</text><text x="77" y="154" text-anchor="middle" class="m">记录传输状态</text>
+  </g>
+  <g transform="translate(958 132)">
+    <rect class="box" width="154" height="190" rx="8"/><text x="24" y="42" class="num">06</text><text x="77" y="74" text-anchor="middle" class="h">接收写入</text>
+    <text x="77" y="104" text-anchor="middle" class="t">CLI 写目标目录</text><text x="77" y="126" text-anchor="middle" class="t">浏览器保存下载</text><text x="77" y="154" text-anchor="middle" class="m">文件夹可 ZIP 流</text>
+  </g>
+
+  <path d="M212 227 H236" class="accent" marker-end="url(#arrow)"/><path d="M392 227 H416" class="accent" marker-end="url(#arrow)"/>
+  <path d="M572 227 H596" class="accent" marker-end="url(#arrow)"/><path d="M752 227 H776" class="accent" marker-end="url(#arrow)"/>
+  <path d="M932 227 H956" class="accent" marker-end="url(#arrow)"/>
+
+  <rect x="310" y="375" width="500" height="54" rx="8" class="soft"/>
+  <text x="560" y="398" text-anchor="middle" class="h">文件夹下载的两种策略</text>
+  <text x="560" y="420" text-anchor="middle" class="t">CLI 递归重建相对路径；浏览器由发送端边遍历边写 ZIP 响应，不生成临时压缩包</text>
+</svg>

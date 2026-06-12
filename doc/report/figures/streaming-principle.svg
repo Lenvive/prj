@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 430" width="1120" height="430" role="img">
+  <title>分片流式传输原理</title>
+  <defs>
+    <style>
+      .bg{fill:#fbfaf7}.card{fill:#fff;stroke:#ded8ce;stroke-width:1.2}.soft{fill:#f4f1eb;stroke:#ded8ce;stroke-width:1}
+      .title{font:300 26px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222;letter-spacing:.08em}
+      .h{font:500 17px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222}.t{font:300 14px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#555}
+      .m{font:300 12px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#888}.chunk{fill:#2f8f83;opacity:.86}.chunk2{fill:#b33a2e;opacity:.74}
+      .line{stroke:#bdb7ae;stroke-width:1.4;fill:none}.green{stroke:#2f8f83;stroke-width:2;fill:none}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="none" stroke="#2f8f83" stroke-width="1.7"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1120" height="430"/>
+  <text x="560" y="48" text-anchor="middle" class="title">分片流式传输原理</text>
+  <text x="560" y="76" text-anchor="middle" class="m">注册阶段只保存路径；下载阶段按固定分片读取、发送、写入</text>
+
+  <rect x="70" y="128" width="230" height="178" rx="8" class="card"/>
+  <text x="185" y="162" text-anchor="middle" class="h">发送端磁盘</text>
+  <rect x="105" y="198" width="32" height="56" class="chunk"/><rect x="143" y="198" width="32" height="56" class="chunk"/>
+  <rect x="181" y="198" width="32" height="56" class="chunk"/><rect x="219" y="198" width="32" height="56" class="chunk"/>
+  <text x="185" y="282" text-anchor="middle" class="m">源文件保持在原位置</text>
+
+  <rect x="445" y="128" width="230" height="178" rx="8" class="card"/>
+  <text x="560" y="162" text-anchor="middle" class="h">应用内存</text>
+  <rect x="510" y="202" width="100" height="46" rx="4" class="soft"/>
+  <rect x="522" y="214" width="76" height="22" class="chunk"/>
+  <text x="560" y="282" text-anchor="middle" class="m">一次只处理当前 chunk</text>
+
+  <rect x="820" y="128" width="230" height="178" rx="8" class="card"/>
+  <text x="935" y="162" text-anchor="middle" class="h">接收端</text>
+  <rect x="860" y="198" width="32" height="56" class="chunk2"/><rect x="898" y="198" width="32" height="56" class="chunk2"/>
+  <rect x="936" y="198" width="32" height="56" class="chunk2"/><rect x="974" y="198" width="32" height="56" class="chunk2"/>
+  <text x="935" y="282" text-anchor="middle" class="m">CLI 写入文件；浏览器保存下载</text>
+
+  <path d="M302 217 H443" class="green" marker-end="url(#arrow)"/>
+  <path d="M677 217 H818" class="green" marker-end="url(#arrow)"/>
+  <text x="372" y="198" text-anchor="middle" class="t">read chunk</text>
+  <text x="748" y="198" text-anchor="middle" class="t">HTTP stream</text>
+
+  <rect x="308" y="344" width="504" height="44" rx="8" class="soft"/>
+  <text x="560" y="372" text-anchor="middle" class="t">内存占用约为 O(chunk_size)，避免整文件缓存和临时副本</text>
+</svg>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 520" width="1120" height="520" role="img">
+  <title>PyLocalSend 整体架构</title>
+  <defs>
+    <style>
+      .bg{fill:#fbfaf7}.panel{fill:#fff;stroke:#ded8ce;stroke-width:1.2}.soft{fill:#f4f1eb;stroke:#ded8ce;stroke-width:1}
+      .title{font:300 26px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222;letter-spacing:.08em}
+      .h{font:500 18px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#222}
+      .t{font:300 15px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#555}.m{font:300 13px "Noto Sans SC","Microsoft YaHei",sans-serif;fill:#888}
+      .accent{fill:#2f8f83}.accent-stroke{stroke:#2f8f83;stroke-width:2;fill:none}.line{stroke:#bdb7ae;stroke-width:1.4;fill:none}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="none" stroke="#2f8f83" stroke-width="1.8"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1120" height="520"/>
+  <text x="560" y="48" text-anchor="middle" class="title">PyLocalSend 整体架构</text>
+  <text x="560" y="74" text-anchor="middle" class="m">一台发送端提供 HTTP 服务，多个接收端通过 CLI 或浏览器访问</text>
+
+  <rect x="70" y="120" width="380" height="320" rx="8" class="panel"/>
+  <text x="260" y="154" text-anchor="middle" class="h">发送端电脑</text>
+  <rect x="110" y="184" width="300" height="42" rx="4" class="soft"/><text x="260" y="211" text-anchor="middle" class="t">NiceGUI 发送端管理页</text>
+  <rect x="110" y="242" width="300" height="42" rx="4" class="soft"/><text x="260" y="269" text-anchor="middle" class="t">SenderService / FastAPI API</text>
+  <rect x="110" y="300" width="300" height="42" rx="4" class="soft"/><text x="260" y="327" text-anchor="middle" class="t">SQLite：files / receivers / logs</text>
+  <rect x="110" y="358" width="300" height="42" rx="4" class="soft"/><text x="260" y="385" text-anchor="middle" class="t">本地真实文件与文件夹</text>
+
+  <rect x="670" y="120" width="380" height="320" rx="8" class="panel"/>
+  <text x="860" y="154" text-anchor="middle" class="h">接收端设备</text>
+  <rect x="710" y="184" width="300" height="42" rx="4" class="soft"/><text x="860" y="211" text-anchor="middle" class="t">ReceiverClient CLI</text>
+  <rect x="710" y="242" width="300" height="42" rx="4" class="soft"/><text x="860" y="269" text-anchor="middle" class="t">浏览器 Receiver WebUI</text>
+  <rect x="710" y="300" width="300" height="42" rx="4" class="soft"/><text x="860" y="327" text-anchor="middle" class="t">浏览器下载管理器</text>
+  <rect x="710" y="358" width="300" height="42" rx="4" class="soft"/><text x="860" y="385" text-anchor="middle" class="t">本地下载目录 / 上传文件</text>
+
+  <path d="M454 260 H666" class="accent-stroke" marker-end="url(#arrow)"/>
+  <path d="M666 300 H454" class="line" marker-end="url(#arrow)"/>
+  <rect x="486" y="206" width="148" height="128" rx="8" fill="#fff" stroke="#ded8ce"/>
+  <text x="560" y="238" text-anchor="middle" class="h">局域网 HTTP</text>
+  <text x="560" y="266" text-anchor="middle" class="t">PIN / Token</text>
+  <text x="560" y="292" text-anchor="middle" class="t">Range / Stream</text>
+  <text x="560" y="318" text-anchor="middle" class="t">Upload 可选</text>
+
+  <text x="260" y="465" text-anchor="middle" class="m">登记路径，不提前复制文件内容</text>
+  <text x="860" y="465" text-anchor="middle" class="m">零安装浏览器下载，CLI 支持续传和并行</text>
+</svg>
