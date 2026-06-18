@@ -151,8 +151,8 @@ pylocalsend ls-remote -H http://192.168.1.100:8765 --pin 123456 --token <token-f
 
 ```powershell
 # 启动发送端
-pylocalsend sender
-pylocalsend gui
+pylocalsend sender --no-browser   # cli 后台服务，无 WebUI
+pylocalsend gui                   # 启动发送端 WebUI
 
 # 注册和管理共享文件
 pylocalsend upload <file-or-dir> [...]
