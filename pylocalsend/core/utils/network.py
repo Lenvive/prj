@@ -79,6 +79,7 @@ def get_local_ips() -> list[str]:
                 text=True,
                 encoding="utf-8",
                 errors="ignore",
+                stderr=subprocess.DEVNULL,
                 timeout=3,
             )
             for line in output.splitlines():
@@ -88,13 +89,32 @@ def get_local_ips() -> list[str]:
                         add(match.group(1))
         except (OSError, subprocess.SubprocessError):
             pass
-    else:
+    elif sys.platform == "darwin":
+        try:
+            output = subprocess.check_output(
+                ["ifconfig"],
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                stderr=subprocess.DEVNULL,
+                timeout=3,
+            )
+            for match in re.finditer(
+                r"^\s*inet\s+(\d+\.\d+\.\d+\.\d+)\b",
+                output,
+                re.MULTILINE,
+            ):
+                add(match.group(1))
+        except (OSError, subprocess.SubprocessError):
+            pass
+    elif sys.platform.startswith("linux"):
         try:
             output = subprocess.check_output(
                 ["hostname", "-I"],
                 text=True,
                 encoding="utf-8",
                 errors="ignore",
+                stderr=subprocess.DEVNULL,
                 timeout=3,
             )
             for ip in output.split():

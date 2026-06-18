@@ -13,3 +13,4 @@ dist/
 build/
 .nicegui/
 **/**/video/
+.DS_Store

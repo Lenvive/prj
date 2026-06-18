@@ -30,7 +30,7 @@ def output(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
         file=stream,
         force_terminal=False,
         color_system=None,
-        width=120,
+        width=1000,
     )
     monkeypatch.setattr(cli, "console", console)
     return stream

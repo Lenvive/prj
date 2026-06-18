@@ -18,6 +18,32 @@ def test_connect_host_maps_all_interfaces_to_loopback() -> None:
     assert network_mod.connect_host("192.168.1.10") == "192.168.1.10"
 
 
+def test_get_local_ips_uses_ifconfig_on_macos(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable_socket(*_args: object, **_kwargs: object) -> None:
+        raise OSError
+
+    def unavailable_hostname(*_args: object, **_kwargs: object) -> None:
+        raise OSError
+
+    def fake_check_output(command: list[str], **_kwargs: object) -> str:
+        assert command == ["ifconfig"]
+        return """\
+lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384
+    inet 127.0.0.1 netmask 0xff000000
+en0: flags=8863<UP,BROADCAST,SMART,RUNNING> mtu 1500
+    inet 192.168.1.20 netmask 0xffffff00 broadcast 192.168.1.255
+utun4: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1380
+    inet 10.20.9.240 --> 10.20.9.240 netmask 0xffffffff
+"""
+
+    monkeypatch.setattr(network_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(network_mod.socket, "socket", unavailable_socket)
+    monkeypatch.setattr(network_mod.socket, "getaddrinfo", unavailable_hostname)
+    monkeypatch.setattr(network_mod.subprocess, "check_output", fake_check_output)
+
+    assert network_mod.get_local_ips() == ["192.168.1.20", "10.20.9.240"]
+
+
 def test_get_access_urls_for_all_interfaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(network_mod, "get_local_ips", lambda: ["192.168.1.10", "10.0.0.5"])
     monkeypatch.setattr(network_mod, "get_public_ip", lambda **_: "203.0.113.8")

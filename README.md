@@ -28,13 +28,31 @@ PyLocalSend 是一个面向局域网的文件传输工具。发送端只登记�
 
 ## 安装
 
+### 使用 Conda
+
+在项目根目录中创建并激活独立环境，然后安装项目：
+
+```powershell
+conda create -n pylocalsend python=3.10 -y
+conda activate pylocalsend
+pip install -e .
+```
+
+以后重新打开终端时，只需再次激活环境：
+
+```powershell
+conda activate pylocalsend
+```
+
+### 使用 venv
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e .
 ```
 
-开发和运行测试时安装额外依赖：
+使用上述任一环境进行开发或运行测试时，安装额外依赖：
 
 ```powershell
 pip install -e ".[dev]"
@@ -47,8 +65,10 @@ pip install -e ".[dev]"
 使用 CLI 服务模式：
 
 ```powershell
-pylocalsend sender
+pylocalsend sender --no-browser
 ```
+
+该命令启动后会持续占用当前终端。请保持这个终端运行，不要按 `Ctrl+C`；然后新开一个终端窗口，进入同一个 Python 环境（例如执行 `conda activate pylocalsend`），再在新终端中运行 `upload`、`ls`、`rm`、`status` 等 CLI 命令。停止发送端时，回到运行服务的终端按 `Ctrl+C`。
 
 或启动发送端 WebUI：
 
